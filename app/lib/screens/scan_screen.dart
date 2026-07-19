@@ -511,7 +511,7 @@ class _ScanResultSheetState extends ConsumerState<_ScanResultSheet> {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('«${o.commonName}» в джунглях 🌿')),
+          SnackBar(content: Text('«${o.commonName}» в саду 🌿')),
         );
         context.go('/home');
       }
@@ -715,7 +715,7 @@ class _ScanResultSheetState extends ConsumerState<_ScanResultSheet> {
                         strokeWidth: 2.2, color: Colors.white),
                   )
                 : const Icon(Icons.add),
-            label: const Text('Добавить в мои джунгли'),
+            label: const Text('Добавить в мой сад'),
           ),
           const SizedBox(height: 10),
           OutlinedButton(

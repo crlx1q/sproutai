@@ -14,7 +14,9 @@ class AppShell extends StatelessWidget {
       body: shell,
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).brightness == Brightness.dark
+              ? AppColors.darkSurfaceContainer
+              : Colors.white,
           boxShadow: [
             BoxShadow(
               color: AppColors.cardShadow,
@@ -83,6 +85,8 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final activeColor = scheme.onSecondaryContainer;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
@@ -90,7 +94,7 @@ class _NavItem extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
         decoration: BoxDecoration(
-          color: active ? AppColors.secondaryContainer : Colors.transparent,
+          color: active ? scheme.secondaryContainer : Colors.transparent,
           borderRadius: BorderRadius.circular(18),
         ),
         child: Column(
@@ -99,7 +103,7 @@ class _NavItem extends StatelessWidget {
             Icon(
               active ? activeIcon : icon,
               size: 24,
-              color: active ? AppColors.primary : AppColors.outline,
+              color: active ? activeColor : scheme.outline,
             ),
             const SizedBox(height: 2),
             Text(
@@ -107,7 +111,7 @@ class _NavItem extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                color: active ? AppColors.primary : AppColors.outline,
+                color: active ? activeColor : scheme.outline,
               ),
             ),
           ],

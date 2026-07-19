@@ -12,8 +12,9 @@ class StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, bg, fg, icon) = switch (status) {
-      'thriving' => ('Отлично', AppColors.secondaryContainer, AppColors.secondary, Icons.favorite_border),
-      'needs_attention' => ('Хочет пить', AppColors.terracottaContainer, AppColors.terracotta, Icons.water_drop_outlined),
+      'thriving' => ('Здоров', AppColors.secondaryContainer, AppColors.secondary, Icons.favorite_border),
+      'thirsty' => ('Хочет пить', AppColors.mintSoft, AppColors.secondary, Icons.water_drop_outlined),
+      'needs_attention' => ('Нужен уход', AppColors.terracottaContainer, AppColors.terracotta, Icons.warning_amber_rounded),
       _ => ('Болеет', AppColors.terracottaContainer, AppColors.terracotta, Icons.healing_outlined),
     };
     return Container(
@@ -45,16 +46,19 @@ class PlantImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final resolved = ApiConfig.imageUrl(url);
+    final scheme = Theme.of(context).colorScheme;
+    final placeholderBg = scheme.secondaryContainer;
+    final placeholderFg = scheme.onSecondaryContainer;
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: resolved.isEmpty
           ? Container(
               height: height,
               width: width,
-              color: AppColors.mintSoft,
-              child: const Center(
+              color: placeholderBg,
+              child: Center(
                 child: Icon(Icons.local_florist_outlined,
-                    size: 42, color: AppColors.secondary),
+                    size: 42, color: placeholderFg),
               ),
             )
           : CachedNetworkImage(
@@ -62,11 +66,11 @@ class PlantImage extends StatelessWidget {
               height: height,
               width: width,
               fit: BoxFit.cover,
-              placeholder: (_, __) => Container(color: AppColors.mintSoft),
+              placeholder: (_, __) => Container(color: placeholderBg),
               errorWidget: (_, __, ___) => Container(
-                color: AppColors.mintSoft,
-                child: const Icon(Icons.local_florist_outlined,
-                    color: AppColors.secondary),
+                color: placeholderBg,
+                child: Icon(Icons.local_florist_outlined,
+                    color: placeholderFg),
               ),
             ),
     );
@@ -86,7 +90,10 @@ class SoftCard extends StatelessWidget {
     final card = Container(
       padding: padding ?? const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: color ?? Colors.white,
+        color: color ??
+            (Theme.of(context).brightness == Brightness.dark
+                ? AppColors.darkCard
+                : Colors.white),
         borderRadius: BorderRadius.circular(24),
         boxShadow: softShadow(),
       ),

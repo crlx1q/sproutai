@@ -117,6 +117,64 @@ router.post('/', upload.single('photo'), async (req, res) => {
     };
   }
 
+  // Автозаполнение по фото: если результат скана не передан, но есть фото —
+  // просим ИИ определить вид, здоровье и уход (кнопка «+», режим «с нуля»).
+  if (req.file && !Number.isFinite(score)) {
+    try {
+      const geminiJpeg = await toGeminiJpeg(req.file.buffer);
+      const result = await analyzePlantImage(geminiJpeg, {
+        plantContext: {
+          name: doc.name,
+          species: doc.species,
+          location: doc.location,
+          stage: doc.stage,
+          plantedAt: doc.plantedAt,
+        },
+        mode: isGrown ? 'grow' : 'diagnose',
+      });
+      if (result && result.isPlant) {
+        doc.healthScore = result.healthScore;
+        doc.healthStatus = result.isHealthy
+          ? 'thriving'
+          : result.healthScore >= 55 ? 'needs_attention' : 'sick';
+        if (!doc.species && result.species) doc.species = result.species;
+        const validGrowth = ['seed', 'sprout', 'seedling', 'growing', 'mature', 'flowering'];
+        if (isGrown && validGrowth.includes(result.growthStage)) {
+          doc.stage = result.growthStage;
+        }
+        if (result.diagnosis && (result.diagnosis.title || result.diagnosis.description)) {
+          doc.lastDiagnosis = {
+            isHealthy: result.isHealthy,
+            title: result.diagnosis.title || '',
+            description: result.diagnosis.description || '',
+            confidence: Number(result.diagnosis.confidence) || 0,
+            treatmentPlan: Array.isArray(result.treatmentPlan) ? result.treatmentPlan : [],
+            scannedAt: new Date(),
+          };
+        }
+        if (result.careAdvice) {
+          const c = result.careAdvice;
+          // ИИ задаёт базовый уход; ручные значения пользователя (если есть) важнее.
+          doc.care = {
+            wateringIntervalDays: c.wateringIntervalDays,
+            waterAmountMl: c.waterAmountMl,
+            light: c.light,
+            fertilizerIntervalDays: c.fertilizerIntervalDays,
+            temperature: c.temperature,
+            ...(careObj || {}),
+          };
+        }
+        if (Number.isFinite(Number(result.nextCheckupDays))) {
+          const days = Math.round(Number(result.nextCheckupDays));
+          doc.care = { ...(doc.care || {}), checkupIntervalDays: days };
+          doc.nextCheckupAt = new Date(Date.now() + days * 86400000);
+        }
+      }
+    } catch (err) {
+      console.error('[plants.create] авто-анализ не удался:', err.message);
+    }
+  }
+
   const plant = await Plant.create(doc);
 
   await Reminder.create({

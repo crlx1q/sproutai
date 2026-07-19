@@ -91,7 +91,7 @@ class CommunityScreen extends ConsumerWidget {
                 controller: textCtrl,
                 maxLines: 4,
                 decoration: const InputDecoration(
-                    hintText: 'Расскажите о своих джунглях…'),
+                    hintText: 'Расскажите о своём саде…'),
               ),
               const SizedBox(height: 12),
               Row(
@@ -419,7 +419,7 @@ class _EmptyFeed extends StatelessWidget {
           Text('Здесь пока тихо', style: theme.textTheme.headlineMedium),
           const SizedBox(height: 8),
           Text(
-            'Поделитесь первым фото своих джунглей — комьюнити оценит!',
+            'Поделитесь первым фото своего сада — комьюнити оценит!',
             style: theme.textTheme.bodyMedium,
             textAlign: TextAlign.center,
           ),

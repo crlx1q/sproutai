@@ -24,6 +24,7 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
   final _species = TextEditingController();
   String _location = 'indoor';
   int _wateringDays = 7;
+  bool _manualCare = false;
   XFile? _photo;
   bool _busy = false;
   String _origin = 'existing';
@@ -60,12 +61,12 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
             photo: _photo != null
                 ? await MultipartFile.fromFile(_photo!.path, filename: 'plant.jpg')
                 : null,
-            care: {'wateringIntervalDays': _wateringDays},
+            care: _manualCare ? {'wateringIntervalDays': _wateringDays} : null,
           );
       if (mounted) {
         context.pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('«${_name.text.trim()}» теперь в ваших джунглях 🌿')),
+          SnackBar(content: Text('«${_name.text.trim()}» теперь в вашем саду 🌿')),
         );
       }
     } catch (e) {
@@ -233,17 +234,39 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
                 ),
               ],
               const SizedBox(height: 24),
-              Text('Полив: раз в $_wateringDays дн.',
-                  style: theme.textTheme.titleMedium),
-              Slider(
-                value: _wateringDays.toDouble(),
-                min: 1,
-                max: 30,
-                divisions: 29,
-                activeColor: AppColors.primary,
-                label: '$_wateringDays',
-                onChanged: (v) => setState(() => _wateringDays = v.round()),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Настроить полив вручную',
+                            style: theme.textTheme.titleMedium),
+                        Text(
+                          _manualCare
+                              ? 'Раз в $_wateringDays дн.'
+                              : 'ИИ подберёт график по фото и виду',
+                          style: theme.textTheme.labelSmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: _manualCare,
+                    onChanged: (v) => setState(() => _manualCare = v),
+                  ),
+                ],
               ),
+              if (_manualCare)
+                Slider(
+                  value: _wateringDays.toDouble(),
+                  min: 1,
+                  max: 30,
+                  divisions: 29,
+                  activeColor: AppColors.primary,
+                  label: '$_wateringDays',
+                  onChanged: (v) => setState(() => _wateringDays = v.round()),
+                ),
               const SizedBox(height: 20),
               FilledButton(
                 onPressed: _busy ? null : _save,
@@ -254,7 +277,7 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
                         child: CircularProgressIndicator(
                             strokeWidth: 2.4, color: Colors.white),
                       )
-                    : const Text('Добавить в джунгли'),
+                    : const Text('Добавить в сад'),
               ),
             ],
           ),

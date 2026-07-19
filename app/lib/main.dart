@@ -5,6 +5,7 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/theme.dart';
 import 'providers/auth_provider.dart';
+import 'providers/theme_provider.dart';
 import 'screens/add_plant_screen.dart';
 import 'screens/auth_screen.dart';
 import 'screens/community_screen.dart';
@@ -15,6 +16,7 @@ import 'screens/pro_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/scan_screen.dart';
 import 'screens/shell.dart';
+import 'screens/splash_screen.dart';
 import 'services/notifications.dart';
 import 'services/push_service.dart';
 
@@ -35,18 +37,24 @@ final _routerProvider = Provider<GoRouter>((ref) {
   ref.listen(authProvider, (_, __) => authListenable.value++);
 
   return GoRouter(
-    initialLocation: '/home',
+    initialLocation: '/splash',
     refreshListenable: authListenable,
     redirect: (context, state) {
       final auth = ref.read(authProvider);
-      final onAuthPage = state.matchedLocation == '/auth' ||
-          state.matchedLocation == '/onboarding';
-      if (auth is AuthLoading) return onAuthPage ? null : '/onboarding';
-      if (auth is AuthLoggedOut) return onAuthPage ? null : '/onboarding';
-      if (auth is AuthLoggedIn && onAuthPage) return '/home';
+      final loc = state.matchedLocation;
+      final inAuthFlow = loc == '/auth' || loc == '/onboarding';
+      if (auth is AuthLoading) return loc == '/splash' ? null : '/splash';
+      if (auth is AuthLoggedOut) {
+        if (loc == '/splash') return '/onboarding';
+        return inAuthFlow ? null : '/onboarding';
+      }
+      if (auth is AuthLoggedIn && (loc == '/splash' || inAuthFlow)) {
+        return '/home';
+      }
       return null;
     },
     routes: [
+      GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
       GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
       GoRoute(path: '/auth', builder: (_, __) => const AuthScreen()),
       StatefulShellRoute.indexedStack(
@@ -85,6 +93,8 @@ class SproutApp extends ConsumerWidget {
       title: 'Sprout AI',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: ref.watch(themeModeProvider),
       routerConfig: ref.watch(_routerProvider),
     );
   }

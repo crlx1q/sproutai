@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/api.dart';
 import '../core/theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/plants_provider.dart';
+import '../providers/theme_provider.dart';
 import '../widgets/common.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -133,26 +135,49 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ),
           const SizedBox(height: 24),
-          _MenuTile(
-            icon: Icons.notifications_outlined,
-            title: 'Напоминания о поливе',
-            subtitle: 'Обновляются при каждой синхронизации',
-            onTap: () async {
-              await ref.read(plantsProvider.notifier).reload();
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Напоминания пересобраны 🔔')),
-                );
-              }
-            },
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: SoftCard(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Row(
+                children: [
+                  Icon(Icons.dark_mode_outlined,
+                      size: 22, color: theme.colorScheme.secondary),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text('Тёмная тема',
+                        style: theme.textTheme.bodyLarge),
+                  ),
+                  Switch(
+                    value: ref.watch(themeModeProvider) == ThemeMode.dark,
+                    onChanged: (v) =>
+                        ref.read(themeModeProvider.notifier).setDark(v),
+                  ),
+                ],
+              ),
+            ),
           ),
           _MenuTile(
             icon: Icons.refresh,
             title: 'Синхронизировать данные',
+            subtitle: 'Обновить растения, профиль и лимиты',
             onTap: () async {
-              await ref.read(plantsProvider.notifier).reload();
-              await ref.read(authProvider.notifier).refreshMe();
-              ref.invalidate(scanQuotaProvider);
+              try {
+                await ref.read(plantsProvider.notifier).reload();
+                await ref.read(authProvider.notifier).refreshMe();
+                ref.invalidate(scanQuotaProvider);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Данные обновлены ✅')),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(apiErrorMessage(e))),
+                  );
+                }
+              }
             },
           ),
           _MenuTile(
@@ -163,7 +188,7 @@ class ProfileScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 24),
           Center(
-            child: Text('Sprout AI v1.0.0',
+            child: Text('Sprout AI v2.0.0',
                 style: theme.textTheme.labelSmall),
           ),
         ],

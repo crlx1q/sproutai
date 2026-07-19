@@ -22,15 +22,15 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
+        backgroundColor: theme.colorScheme.primary,
+        foregroundColor: theme.colorScheme.onPrimary,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         onPressed: () => context.push('/add-plant'),
         child: const Icon(Icons.add, size: 28),
       ),
       body: SafeArea(
         child: RefreshIndicator(
-          color: AppColors.primary,
+          color: theme.colorScheme.primary,
           onRefresh: () => ref.read(plantsProvider.notifier).reload(),
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
@@ -52,7 +52,7 @@ class HomeScreen extends ConsumerWidget {
                       _TasksCard(plants: plantsAsync.value ?? const []),
                       const SizedBox(height: 30),
                       SectionHeader(
-                        title: 'Мои джунгли',
+                        title: 'Мой сад',
                         action: plantsAsync.value?.isNotEmpty == true
                             ? '${plantsAsync.value!.length} раст.'
                             : null,
@@ -63,10 +63,10 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
               plantsAsync.when(
-                loading: () => const SliverFillRemaining(
+                loading: () => SliverFillRemaining(
                   hasScrollBody: false,
                   child: Center(
-                      child: CircularProgressIndicator(color: AppColors.primary)),
+                      child: CircularProgressIndicator(color: theme.colorScheme.primary)),
                 ),
                 error: (e, _) => SliverFillRemaining(
                   hasScrollBody: false,
@@ -109,7 +109,7 @@ class HomeScreen extends ConsumerWidget {
     }
     final thirsty = plants.where((p) => p.needsWater).length;
     return thirsty == 0
-        ? 'Твои джунгли выглядят отлично сегодня.'
+        ? 'Твой сад выглядит отлично сегодня.'
         : 'Пара зелёных друзей ждёт внимания.';
   }
 }
@@ -125,18 +125,18 @@ class _TasksCard extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return SoftCard(
-      color: AppColors.secondaryContainer,
+      color: theme.colorScheme.secondaryContainer,
       padding: const EdgeInsets.all(20),
       child: Row(
         children: [
           Container(
             width: 52,
             height: 52,
-            decoration: const BoxDecoration(
-              color: Colors.white, shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface, shape: BoxShape.circle),
             child: Icon(
               thirsty.isEmpty ? Icons.check : Icons.water_drop_outlined,
-              color: AppColors.secondary,
+              color: theme.colorScheme.secondary,
             ),
           ),
           const SizedBox(width: 16),
@@ -148,7 +148,7 @@ class _TasksCard extends ConsumerWidget {
                   'ЗАДАЧИ НА СЕГОДНЯ',
                   style: theme.textTheme.labelSmall?.copyWith(
                     letterSpacing: 1.1,
-                    color: AppColors.secondary,
+                    color: theme.colorScheme.onSecondaryContainer,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -217,7 +217,7 @@ class _PlantCard extends StatelessWidget {
                 Positioned(
                   top: 8,
                   left: 8,
-                  child: StatusChip(status: plant.needsWater ? 'needs_attention' : plant.healthStatus),
+                  child: StatusChip(status: plant.needsWater ? 'thirsty' : plant.healthStatus),
                 ),
               ],
             ),
@@ -302,7 +302,7 @@ class _EmptyJungle extends StatelessWidget {
                 size: 54, color: AppColors.secondary),
           ),
           const SizedBox(height: 24),
-          Text('Джунгли пока пусты', style: theme.textTheme.headlineMedium),
+          Text('В саду пока пусто', style: theme.textTheme.headlineMedium),
           const SizedBox(height: 10),
           Text(
             'Добавьте первое растение вручную или отсканируйте его камерой — Sprout AI сам определит вид.',

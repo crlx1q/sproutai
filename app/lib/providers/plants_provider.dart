@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -45,7 +47,7 @@ class PlantsNotifier extends AsyncNotifier<List<Plant>> {
       if (plantedAt != null) 'plantedAt': plantedAt.toIso8601String(),
       if (growthGoal != null && growthGoal.isNotEmpty) 'growthGoal': growthGoal,
       if (photo != null) 'photo': photo,
-      if (care != null) 'care': care,
+      if (care != null) 'care': jsonEncode(care),
     });
     final res = await _api.dio.post('/api/plants', data: form);
     await reload();

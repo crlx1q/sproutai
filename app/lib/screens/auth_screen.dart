@@ -78,7 +78,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   const SizedBox(height: 8),
                   Text(
                     _isLogin
-                        ? 'Ваши джунгли скучали.'
+                        ? 'Ваш сад скучал.'
                         : 'И начните растить с умом.',
                     style: theme.textTheme.bodyMedium,
                     textAlign: TextAlign.center,
