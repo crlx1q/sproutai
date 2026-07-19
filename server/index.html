@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprout AI — карманный ботаник с искусственным интеллектом</title>
+<link rel="icon" type="image/png" href="/logo.png">
+<link rel="apple-touch-icon" href="/logo.png">
+<meta name="description" content="Сфотографируйте растение — Sprout AI определит вид, диагностирует болезнь и составит план ухода. Напоминания о поливе и дневник до/после.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:wght@400;500;600;700&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --surface: #f9f9f8;
+    --white: #ffffff;
+    --on-surface: #191c1c;
+    --on-surface-variant: #414844;
+    --outline: #717973;
+    --primary: #012d1d;
+    --primary-container: #1b4332;
+    --mint: #bdeacd;
+    --mint-soft: #d9efe2;
+    --sage: #eef4f0;
+    --terracotta: #741b04;
+    --terracotta-soft: #ffdad2;
+    --shadow: 0 10px 40px rgba(27, 67, 50, 0.08);
+    --radius-card: 24px;
+    --radius-btn: 16px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Work Sans', sans-serif;
+    background: var(--surface);
+    color: var(--on-surface);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { font-family: 'Literata', serif; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+
+  /* NAV */
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(249, 249, 248, 0.85);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(193, 200, 194, 0.4);
+  }
+  .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 68px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-family: 'Literata', serif; font-weight: 700; font-size: 22px; color: var(--primary); text-decoration: none; }
+  .logo img { width: 30px; height: 30px; border-radius: 8px; object-fit: contain; }
+  [data-lucide] { width: 22px; height: 22px; stroke-width: 2; vertical-align: middle; }
+  .btn [data-lucide], .store [data-lucide] { width: 18px; height: 18px; }
+  .nav-links { display: flex; gap: 28px; align-items: center; }
+  .nav-links a { color: var(--on-surface-variant); text-decoration: none; font-size: 15px; font-weight: 500; transition: color .2s; }
+  .nav-links a:hover { color: var(--primary); }
+  .nav-links a.btn, .nav-links a.btn:hover { color: #fff; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    background: var(--primary); color: #fff;
+    padding: 13px 26px; border-radius: var(--radius-btn);
+    font-family: 'Work Sans', sans-serif; font-weight: 600; font-size: 15px;
+    text-decoration: none; border: none; cursor: pointer;
+    transition: transform .15s, box-shadow .2s;
+    box-shadow: 0 6px 20px rgba(1, 45, 29, 0.25);
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(1, 45, 29, 0.32); }
+  .btn.small { padding: 10px 20px; font-size: 14px; }
+  .btn.ghost { background: transparent; color: var(--primary); border: 1.5px solid var(--primary); box-shadow: none; }
+
+  /* HERO */
+  .hero { padding: 80px 0 60px; overflow: hidden; }
+  .hero-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 48px; align-items: center; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--mint); color: var(--primary-container);
+    font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    padding: 7px 16px; border-radius: 999px; margin-bottom: 24px;
+  }
+  .hero h1 { font-size: clamp(34px, 5vw, 54px); font-weight: 700; line-height: 1.12; letter-spacing: -0.02em; color: var(--primary); }
+  .hero h1 em { font-style: normal; color: #3e6750; }
+  .hero p.lead { font-size: 19px; color: var(--on-surface-variant); margin: 22px 0 34px; max-width: 480px; }
+  .hero-cta { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .hero-note { font-size: 13px; color: var(--outline); margin-top: 16px; }
+
+  /* PHONE MOCKUP */
+  .phone-zone { position: relative; display: flex; justify-content: center; }
+  .phone-blob {
+    position: absolute; inset: -30px -10px;
+    background: radial-gradient(ellipse at 60% 40%, var(--mint-soft), transparent 70%);
+    z-index: 0;
+  }
+  .phone {
+    position: relative; z-index: 1;
+    width: 300px; height: 620px;
+    background: var(--primary);
+    border-radius: 44px; padding: 12px;
+    box-shadow: 0 40px 80px rgba(1, 45, 29, 0.30);
+    transform: rotate(2deg);
+  }
+  .phone-screen {
+    width: 100%; height: 100%;
+    background: var(--surface);
+    border-radius: 34px; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .ps-head { padding: 20px 18px 12px; }
+  .ps-title { font-family: 'Literata', serif; font-weight: 700; font-size: 20px; color: var(--primary); }
+  .ps-sub { font-size: 12px; color: var(--outline); margin-top: 2px; }
+  .ps-task {
+    margin: 10px 14px; background: var(--mint); border-radius: 18px; padding: 14px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .ps-task-left b { display: block; font-size: 14px; color: var(--primary-container); }
+  .ps-task-left span { font-size: 11px; color: #3e6750; }
+  .ps-task .pill { background: var(--primary); color: #fff; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 7px 12px; }
+  .ps-section { font-family: 'Literata', serif; font-weight: 600; font-size: 15px; margin: 12px 18px 8px; }
+  .ps-cards { display: flex; gap: 10px; padding: 0 14px; }
+  .ps-card { flex: 1; background: #fff; border-radius: 16px; padding: 10px; box-shadow: var(--shadow); }
+  .ps-card .img { height: 84px; border-radius: 12px; margin-bottom: 8px; width: 100%; object-fit: cover; display: block; }
+  .ps-card .img.monstera { background: linear-gradient(135deg, #2f6b4f, #a5d0b9); }
+  .ps-card .img.sansevieria { background: linear-gradient(135deg, #57735f, #dbe8d9); }
+  .ps-card b { font-size: 13px; font-family: 'Literata', serif; }
+  .ps-card .status { display: inline-block; margin-top: 6px; font-size: 10px; font-weight: 600; border-radius: 999px; padding: 3px 8px; }
+  .status.ok { background: var(--mint); color: var(--primary-container); }
+  .status.warn { background: var(--terracotta-soft); color: var(--terracotta); }
+  .ps-diag {
+    margin: 14px; background: #fff; border-radius: 16px; padding: 13px; box-shadow: var(--shadow);
+    border-left: 4px solid #3e6750;
+  }
+  .ps-diag b { font-size: 12.5px; color: var(--primary); display: block; margin-bottom: 3px; }
+  .ps-diag span { font-size: 11px; color: var(--on-surface-variant); }
+  .ps-nav { margin-top: auto; display: flex; justify-content: space-around; padding: 12px 0 18px; border-top: 1px solid #e7e8e7; }
+  .ps-nav i { width: 34px; height: 5px; border-radius: 999px; background: #c1c8c2; }
+  .ps-nav i.active { background: var(--primary); }
+
+  /* SECTIONS */
+  section { padding: 84px 0; }
+  .sec-head { text-align: center; max-width: 620px; margin: 0 auto 56px; }
+  .sec-head h2 { font-size: clamp(28px, 3.6vw, 38px); font-weight: 600; color: var(--primary); }
+  .sec-head p { color: var(--on-surface-variant); font-size: 17px; margin-top: 14px; }
+
+  /* HOW IT WORKS */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .step {
+    background: #fff; border-radius: var(--radius-card); padding: 34px 28px;
+    box-shadow: var(--shadow); position: relative;
+    transition: transform .2s;
+  }
+  .step:hover { transform: translateY(-4px); }
+  .step .num {
+    width: 44px; height: 44px; border-radius: 14px;
+    background: var(--mint); color: var(--primary-container);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Literata', serif; font-weight: 700; font-size: 19px; margin-bottom: 20px;
+  }
+  .step h3 { font-size: 20px; margin-bottom: 10px; color: var(--primary); }
+  .step p { font-size: 15px; color: var(--on-surface-variant); }
+
+  /* FEATURES */
+  .features-band { background: var(--sage); }
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .feature { background: #fff; border-radius: 20px; padding: 28px 24px; box-shadow: var(--shadow); }
+  .feature .ico {
+    width: 46px; height: 46px; border-radius: 999px; margin-bottom: 16px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--mint); color: var(--primary-container);
+  }
+  .feature .ico [data-lucide] { width: 23px; height: 23px; }
+  .feature .ico.warm { background: var(--terracotta-soft); color: var(--terracotta); }
+  .feature h3 { font-size: 17.5px; margin-bottom: 8px; color: var(--primary); }
+  .feature p { font-size: 14.5px; color: var(--on-surface-variant); }
+
+  /* PRICING */
+  .plans { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; max-width: 760px; margin: 0 auto; }
+  .plan {
+    background: #fff; border-radius: var(--radius-card); padding: 36px 32px;
+    box-shadow: var(--shadow); border: 2px solid transparent;
+  }
+  .plan.featured { border-color: var(--primary-container); position: relative; }
+  .plan .badge {
+    position: absolute; top: -13px; left: 32px;
+    background: var(--primary); color: #fff; font-size: 12px; font-weight: 600;
+    border-radius: 999px; padding: 5px 14px;
+  }
+  .plan h3 { font-size: 21px; color: var(--primary); }
+  .plan .price { font-family: 'Literata', serif; font-size: 40px; font-weight: 700; color: var(--primary); margin: 14px 0 4px; }
+  .plan .price small { font-size: 16px; color: var(--outline); font-weight: 400; font-family: 'Work Sans', sans-serif; }
+  .plan ul { list-style: none; margin: 22px 0 28px; }
+  .plan li { padding: 8px 0 8px 30px; position: relative; font-size: 15px; color: var(--on-surface-variant); }
+  .plan li::before {
+    content: ''; position: absolute; left: 4px; top: 10px;
+    width: 6px; height: 11px;
+    border: solid var(--primary-container); border-width: 0 2.6px 2.6px 0;
+    transform: rotate(45deg);
+  }
+
+  /* DOWNLOAD CTA */
+  .cta-band { background: var(--primary); border-radius: var(--radius-card); padding: 68px 40px; text-align: center; color: #fff; }
+  .cta-band h2 { font-size: clamp(26px, 3.4vw, 36px); font-weight: 600; }
+  .cta-band p { color: #a5d0b9; font-size: 17px; margin: 14px auto 32px; max-width: 460px; }
+  .cta-band .btn { background: #fff; color: var(--primary); box-shadow: none; }
+  .stores { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+  .store {
+    display: inline-flex; align-items: center; gap: 10px;
+    border: 1.5px solid rgba(255, 255, 255, 0.35); border-radius: 14px;
+    padding: 10px 20px; color: #fff; text-decoration: none; font-size: 14px;
+    transition: background .2s;
+  }
+  .store:hover { background: rgba(255, 255, 255, 0.1); }
+  .store svg { flex: none; }
+  .store small { display: block; font-size: 10.5px; opacity: .7; text-align: left; }
+  .store b { display: block; font-size: 14.5px; text-align: left; }
+
+  footer { padding: 44px 0 56px; color: var(--outline); font-size: 14px; }
+  .foot { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+  .foot a { color: var(--outline); text-decoration: none; }
+  .foot a:hover { color: var(--primary); }
+
+  @media (max-width: 860px) {
+    .hero-grid { grid-template-columns: 1fr; text-align: center; }
+    .hero p.lead { margin-left: auto; margin-right: auto; }
+    .hero-cta { justify-content: center; }
+    .phone { transform: none; margin-top: 20px; }
+    .steps, .features { grid-template-columns: 1fr; }
+    .plans { grid-template-columns: 1fr; }
+    .nav-links a:not(.btn) { display: none; }
+    section { padding: 60px 0; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <a class="logo" href="#">
+      <img src="/logo.png" alt="Sprout AI">
+      Sprout AI
+    </a>
+    <div class="nav-links">
+      <a href="#how">Как работает</a>
+      <a href="#features">Возможности</a>
+      <a href="#pricing">Цены</a>
+      <a href="#download" class="btn small">Скачать</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow">Ваш карманный эксперт-ботаник</span>
+      <h1>Одно фото — и вы знаете, <em>что нужно растению</em></h1>
+      <p class="lead">Sprout AI определяет вид, диагностирует болезни и составляет персональный план ухода: полив, свет, удобрения. С напоминаниями и дневником «до/после».</p>
+      <div class="hero-cta">
+        <a class="btn" href="#download">
+          <i data-lucide="download"></i>
+          Скачать приложение
+        </a>
+        <a class="btn ghost" href="#how">Узнать больше</a>
+      </div>
+      <p class="hero-note">Бесплатно. 5 ИИ-диагностик в месяц, Pro — безлимит от $2.99.</p>
+    </div>
+    <div class="phone-zone">
+      <div class="phone-blob"></div>
+      <div class="phone" aria-hidden="true">
+        <div class="phone-screen">
+          <div class="ps-head">
+            <div class="ps-title">Привет, Анна!</div>
+            <div class="ps-sub">Твой сад выглядит отлично</div>
+          </div>
+          <div class="ps-task">
+            <div class="ps-task-left"><b>3 растения</b><span>нуждаются в поливе</span></div>
+            <span class="pill">Полить все</span>
+          </div>
+          <div class="ps-section">Мой сад</div>
+          <div class="ps-cards">
+            <div class="ps-card">
+              <img class="img" src="/plant-pitaya.jpg" alt="Питайя">
+              <b>Питайя</b><br>
+              <span class="status ok">Отлично</span>
+            </div>
+            <div class="ps-card">
+              <img class="img" src="/plant-haworthia.jpg" alt="Хавортия">
+              <b>Хавортия</b><br>
+              <span class="status warn">Хочет пить</span>
+            </div>
+          </div>
+          <div class="ps-diag">
+            <b>Диагноз ИИ · Дефицит магния</b>
+            <span>Межжилковый хлороз на старых листьях. План лечения готов →</span>
+          </div>
+          <div class="ps-nav"><i class="active"></i><i></i><i></i><i></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="how">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Три шага до здоровых растений</h2>
+      <p>Никаких ботанических справочников — просто наведите камеру.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <h3>Сфотографируйте</h3>
+        <p>Наведите камеру на лист или цветок. Подойдёт и фото из галереи — главное, чтобы растение было в кадре.</p>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <h3>Получите диагноз</h3>
+        <p>ИИ определит вид, найдёт признаки болезней, вредителей и дефицитов питания — с оценкой уверенности и понятным объяснением.</p>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <h3>Следуйте плану</h3>
+        <p>Персональный план лечения и ухода: полив, свет, удобрения, температура. Напоминания не дадут забыть ни одного полива.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features" class="features-band">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Не просто «полей раз в неделю»</h2>
+      <p>Sprout AI — полноценная экосистема ухода за домашним садом.</p>
+    </div>
+    <div class="features">
+      <div class="feature">
+        <div class="ico"><i data-lucide="scan-search"></i></div>
+        <h3>ИИ-диагностика болезней</h3>
+        <p>Хлороз, паутинный клещ, перелив, ожоги — модель распознаёт проблему по фото и объясняет причину.</p>
+      </div>
+      <div class="feature">
+        <div class="ico"><i data-lucide="notebook-pen"></i></div>
+        <h3>Дневник «до/после»</h3>
+        <p>Фиксируйте прогресс лечения фотографиями. Повторный скан оценит динамику: отступает болезнь или нет.</p>
+      </div>
+      <div class="feature">
+        <div class="ico warm"><i data-lucide="bell-ring"></i></div>
+        <h3>Умные напоминания</h3>
+        <p>Индивидуальные расписания полива и подкормки для каждого растения. Кнопка «Полить все» — для ленивых дней.</p>
+      </div>
+      <div class="feature">
+        <div class="ico"><i data-lucide="leaf"></i></div>
+        <h3>Мой сад</h3>
+        <p>Вся коллекция в одном месте: статус здоровья, health score и карточка ухода для каждого зелёного питомца.</p>
+      </div>
+      <div class="feature">
+        <div class="ico"><i data-lucide="users"></i></div>
+        <h3>Комьюнити</h3>
+        <p>Делитесь успехами, задавайте вопросы и вдохновляйтесь садами других растениеводов.</p>
+      </div>
+      <div class="feature">
+        <div class="ico warm"><i data-lucide="activity"></i></div>
+        <h3>Трекинг здоровья</h3>
+        <p>Оценка здоровья 0–100 по каждому скану. Наблюдайте, как растение восстанавливается после лечения.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Честные цены</h2>
+      <p>Начните бесплатно. Переходите на Pro, когда сад разрастётся.</p>
+    </div>
+    <div class="plans">
+      <div class="plan">
+        <h3>Бесплатно</h3>
+        <div class="price">$0 <small>/ навсегда</small></div>
+        <ul>
+          <li>5 ИИ-диагностик в месяц</li>
+          <li>До 10 растений в коллекции</li>
+          <li>Напоминания о поливе</li>
+          <li>Дневник роста</li>
+        </ul>
+        <a class="btn ghost" href="#download">Скачать</a>
+      </div>
+      <div class="plan featured">
+        <span class="badge">Экономия 30% на годовом</span>
+        <h3>Sprout Pro</h3>
+        <div class="price">$2.99 <small>/ мес · или $24.99 в год</small></div>
+        <ul>
+          <li>Безлимитная ИИ-диагностика</li>
+          <li>Неограниченная коллекция</li>
+          <li>Продвинутая аналитика и история</li>
+          <li>Чат с ботаниками 24/7</li>
+          <li>Без рекламы</li>
+        </ul>
+        <a class="btn" href="#download">Попробовать 7 дней бесплатно</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="download">
+  <div class="wrap">
+    <div class="cta-band">
+      <h2>Ваши растения заслуживают лучшего ухода</h2>
+      <p>Скачайте Sprout AI и получите 5 бесплатных ИИ-диагностик уже сегодня.</p>
+      <a class="btn" href="/app/sprout-ai.apk" download>
+        <i data-lucide="download"></i>
+        Скачать APK
+      </a>
+      <div class="stores">
+        <a class="store" href="#" onclick="alert('Скоро в Google Play!'); return false;">
+          <svg width="22" height="22" viewBox="0 0 512 512" aria-hidden="true"><path fill="#00d7fe" d="M99.6 24.5c-6.1 3.5-10.2 9.9-10.2 18.2v426.6c0 8.3 4.1 14.7 10.2 18.2l1.4.7L295 256.9v-3.8L101 23.8z"/><path fill="#ffce00" d="M357 322l-62-65.1v-3.8L357 188l75.3 42.8c21.4 12.1 21.4 32 0 44.2z"/><path fill="#fd3944" d="M358.4 321L295 255 99.6 488.2c7.1 4.1 18.7 4.6 31.9-2.9z"/><path fill="#00f076" d="M358.4 191L131.5 26.7C118.3 19.2 106.7 19.7 99.6 23.8L295 255z"/></svg>
+          <span><small>Скоро в</small><b>Google Play</b></span>
+        </a>
+        <a class="store" href="#" onclick="alert('Скоро в App Store!'); return false;">
+          <svg width="20" height="20" viewBox="0 0 384 512" fill="#ffffff" aria-hidden="true"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+          <span><small>Скоро в</small><b>App Store</b></span>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <span>© 2026 Sprout AI. Растите с умом.</span>
+    <span><a href="mailto:support@crlx1q.com">support@crlx1q.com</a></span>
+  </div>
+</footer>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>lucide.createIcons();</script>
+
+</body>
+</html>
