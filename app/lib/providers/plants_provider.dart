@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/api.dart';
 import '../models/models.dart';
-import '../services/notifications.dart';
 
 final plantsProvider =
     AsyncNotifierProvider<PlantsNotifier, List<Plant>>(PlantsNotifier.new);
@@ -19,7 +18,6 @@ class PlantsNotifier extends AsyncNotifier<List<Plant>> {
     final plants = (res.data['plants'] as List)
         .map((e) => Plant.fromJson(e as Map<String, dynamic>))
         .toList();
-    await NotificationService.instance.syncWateringReminders(plants);
     return plants;
   }
 
