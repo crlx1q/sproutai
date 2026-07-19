@@ -11,6 +11,37 @@ import '../models/models.dart';
 import '../providers/plants_provider.dart';
 import '../widgets/common.dart';
 
+// --- Адаптивные цвета для тёмной/светлой темы (контраст) ---
+bool _isDark(BuildContext c) => Theme.of(c).brightness == Brightness.dark;
+
+/// Яркий красный для текста/иконок (чуть ярче в обеих темах).
+Color _danger(BuildContext c) =>
+    _isDark(c) ? const Color(0xFFFF8F7E) : const Color(0xFFC2371B);
+
+/// Акцент «здорово».
+Color _good(BuildContext c) =>
+    _isDark(c) ? AppColors.darkOnSecondaryContainer : AppColors.secondary;
+
+/// Фон карточки-предупреждения.
+Color _dangerContainer(BuildContext c) =>
+    _isDark(c) ? const Color(0xFF48170C) : AppColors.terracottaContainer;
+
+/// Фон «здоровой» карточки.
+Color _goodContainer(BuildContext c) =>
+    _isDark(c) ? AppColors.darkSecondaryContainer : AppColors.mintSoft;
+
+/// Нейтральный контейнер (плашки, прогресс-бары).
+Color _neutralContainer(BuildContext c) =>
+    _isDark(c) ? AppColors.darkSurfaceContainerHigh : AppColors.surfaceContainer;
+
+/// Цвет текста-значения.
+Color _valueColor(BuildContext c) =>
+    _isDark(c) ? AppColors.darkOnSurface : AppColors.onSurface;
+
+/// Фон карточки-плитки по умолчанию (контрастнее фона).
+Color _tileCard(BuildContext c) =>
+    _isDark(c) ? AppColors.darkSurfaceContainerHigh : Colors.white;
+
 class PlantScreen extends ConsumerWidget {
   const PlantScreen({super.key, required this.plantId});
 
@@ -58,13 +89,15 @@ class _PlantDetailsView extends ConsumerWidget {
           actionsIconTheme: const IconThemeData(color: Colors.white),
           actions: [
             PopupMenuButton<String>(
-              color: Colors.white,
+              color: _isDark(context)
+                  ? AppColors.darkSurfaceContainerHigh
+                  : Colors.white,
               onSelected: (v) async {
                 if (v == 'delete') {
                   final confirmed = await showDialog<bool>(
                     context: context,
                     builder: (dialogContext) => AlertDialog(
-                      backgroundColor: Colors.white,
+                      backgroundColor: _isDark(context) ? AppColors.darkSurfaceContainerHigh : Colors.white,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(24)),
                       title: const Text('Удалить растение?'),
@@ -77,8 +110,8 @@ class _PlantDetailsView extends ConsumerWidget {
                         ),
                         TextButton(
                           onPressed: () => Navigator.pop(dialogContext, true),
-                          child: const Text('Удалить',
-                              style: TextStyle(color: AppColors.error)),
+                          child: Text('Удалить',
+                              style: TextStyle(color: _danger(context))),
                         ),
                       ],
                     ),
@@ -91,8 +124,11 @@ class _PlantDetailsView extends ConsumerWidget {
                   }
                 }
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'delete', child: Text('Удалить растение')),
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Удалить растение',
+                        style: TextStyle(color: _danger(context)))),
               ],
             ),
           ],
@@ -232,13 +268,13 @@ class _PlantDetailsView extends ConsumerWidget {
                         child: LinearProgressIndicator(
                           value: plant.healthScore / 100,
                           minHeight: 10,
-                          backgroundColor: AppColors.surfaceContainer,
+                          backgroundColor: _neutralContainer(context),
                           valueColor: AlwaysStoppedAnimation(
                             plant.healthScore >= 70
-                                ? AppColors.secondary
+                                ? _good(context)
                                 : plant.healthScore >= 45
-                                    ? const Color(0xFFB77B1F)
-                                    : AppColors.terracotta,
+                                    ? const Color(0xFFD79A34)
+                                    : _danger(context),
                           ),
                         ),
                       ),
@@ -257,8 +293,8 @@ class _PlantDetailsView extends ConsumerWidget {
                   const SizedBox(height: 16),
                   SoftCard(
                     color: diagnosis.isHealthy
-                        ? AppColors.mintSoft
-                        : AppColors.terracottaContainer,
+                        ? _goodContainer(context)
+                        : _dangerContainer(context),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -267,8 +303,8 @@ class _PlantDetailsView extends ConsumerWidget {
                           style: theme.textTheme.labelSmall?.copyWith(
                             letterSpacing: 1.2,
                             color: diagnosis.isHealthy
-                                ? AppColors.secondary
-                                : AppColors.terracotta,
+                                ? _good(context)
+                                : _danger(context),
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -408,7 +444,7 @@ class _PlantDetailsView extends ConsumerWidget {
       BuildContext context, WidgetRef ref, Plant plant) async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: _isDark(context) ? AppColors.darkSurfaceContainerHigh : Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -475,7 +511,7 @@ class _PlantDetailsView extends ConsumerWidget {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: Colors.white,
+        backgroundColor: _isDark(context) ? AppColors.darkSurfaceContainerHigh : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: Text(score != null ? 'Состояние: $score/100' : 'Готово'),
         content: Column(
@@ -524,7 +560,7 @@ class _PlantDetailsView extends ConsumerWidget {
                 ? month[0].toUpperCase() + month.substring(1)
                 : month,
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: AppColors.secondary,
+                  color: _good(context),
                   fontWeight: FontWeight.w700,
                 ),
           ),
@@ -546,7 +582,7 @@ class _PlantDetailsView extends ConsumerWidget {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
+      backgroundColor: _isDark(context) ? AppColors.darkSurfaceContainerHigh : Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
@@ -634,7 +670,7 @@ class _PlantDetailsView extends ConsumerWidget {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
+      backgroundColor: _isDark(context) ? AppColors.darkSurfaceContainerHigh : Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
@@ -753,7 +789,7 @@ class _CheckupCard extends StatelessWidget {
       }
     }
     return SoftCard(
-      color: overdue ? AppColors.terracottaContainer : AppColors.mintSoft,
+      color: overdue ? _dangerContainer(context) : _goodContainer(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -761,13 +797,13 @@ class _CheckupCard extends StatelessWidget {
             children: [
               Icon(Icons.camera_alt_outlined,
                   size: 19,
-                  color: overdue ? AppColors.terracotta : AppColors.secondary),
+                  color: overdue ? _danger(context) : _good(context)),
               const SizedBox(width: 8),
               Text('КОНТРОЛЬ СОСТОЯНИЯ',
                   style: theme.textTheme.labelSmall?.copyWith(
                     letterSpacing: 1.2,
                     fontWeight: FontWeight.w700,
-                    color: overdue ? AppColors.terracotta : AppColors.secondary,
+                    color: overdue ? _danger(context) : _good(context),
                   )),
             ],
           ),
@@ -812,7 +848,11 @@ class _CareTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: highlight ? AppColors.secondaryContainer : Colors.white,
+        color: highlight
+            ? (_isDark(context)
+                ? AppColors.darkSecondaryContainer
+                : AppColors.secondaryContainer)
+            : _tileCard(context),
         borderRadius: BorderRadius.circular(20),
         boxShadow: softShadow(),
       ),
@@ -820,8 +860,7 @@ class _CareTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 21,
-              color: highlight ? AppColors.primary : AppColors.secondary),
+          Icon(icon, size: 21, color: _good(context)),
           const SizedBox(height: 8),
           Text(label,
               style: theme.textTheme.labelSmall?.copyWith(letterSpacing: 1)),
@@ -830,7 +869,7 @@ class _CareTile extends StatelessWidget {
             value,
             style: theme.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w600,
-              color: AppColors.onSurface,
+              color: _valueColor(context),
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -850,9 +889,9 @@ class _JournalCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final (kindLabel, kindColor) = switch (entry.kind) {
-      'before' => ('ДО', AppColors.terracotta),
-      'after' => ('ПОСЛЕ', AppColors.secondary),
-      _ => ('ПРОГРЕСС', AppColors.outline),
+      'before' => ('ДО', _danger(context)),
+      'after' => ('ПОСЛЕ', _good(context)),
+      _ => ('ПРОГРЕСС', Theme.of(context).colorScheme.outline),
     };
 
     return Padding(
@@ -893,10 +932,10 @@ class _JournalCard extends StatelessWidget {
                             : Icons.trending_flat,
                     size: 16,
                     color: entry.trend == 'up'
-                        ? AppColors.secondary
+                        ? _good(context)
                         : entry.trend == 'down'
-                            ? AppColors.terracotta
-                            : AppColors.outline,
+                            ? _danger(context)
+                            : Theme.of(context).colorScheme.outline,
                   ),
                   const SizedBox(width: 6),
                   Text('ИИ-оценка: ${entry.healthScore}/100',
@@ -910,13 +949,13 @@ class _JournalCard extends StatelessWidget {
                 child: LinearProgressIndicator(
                   value: entry.healthScore! / 100,
                   minHeight: 6,
-                  backgroundColor: AppColors.surfaceContainer,
+                  backgroundColor: _neutralContainer(context),
                   valueColor: AlwaysStoppedAnimation(
                     entry.healthScore! >= 70
-                        ? AppColors.secondary
+                        ? _good(context)
                         : entry.healthScore! >= 45
-                            ? const Color(0xFFB77B1F)
-                            : AppColors.terracotta,
+                            ? const Color(0xFFD79A34)
+                            : _danger(context),
                   ),
                 ),
               ),
@@ -986,7 +1025,7 @@ class _ScheduleCard extends StatelessWidget {
               Expanded(
                 child: _NextEventTile(
                   icon: Icons.water_drop_rounded,
-                  color: AppColors.secondary,
+                  color: _good(context),
                   title: 'Полив',
                   when: _relative(plant.wateringDueAt),
                   detail:
@@ -998,7 +1037,9 @@ class _ScheduleCard extends StatelessWidget {
               Expanded(
                 child: _NextEventTile(
                   icon: Icons.eco_rounded,
-                  color: const Color(0xFFB77B1F),
+                  color: _isDark(context)
+                      ? const Color(0xFFE6B450)
+                      : const Color(0xFFB77B1F),
                   title: 'Удобрение',
                   when: _relative(plant.fertilizingDueAt),
                   detail: 'раз в ${plant.care.fertilizerIntervalDays} дн.',
@@ -1026,8 +1067,10 @@ class _ScheduleCard extends StatelessWidget {
                   width: 42,
                   decoration: BoxDecoration(
                     color: active
-                        ? AppColors.secondaryContainer
-                        : AppColors.surfaceContainer,
+                        ? (_isDark(context)
+                            ? AppColors.darkSecondaryContainer
+                            : AppColors.secondaryContainer)
+                        : _neutralContainer(context),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Column(
@@ -1044,11 +1087,14 @@ class _ScheduleCard extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           if (isWater)
-                            const Icon(Icons.water_drop,
-                                size: 10, color: AppColors.secondary),
+                            Icon(Icons.water_drop,
+                                size: 10, color: _good(context)),
                           if (isFert)
-                            const Icon(Icons.eco,
-                                size: 10, color: Color(0xFFB77B1F)),
+                            Icon(Icons.eco,
+                                size: 10,
+                                color: _isDark(context)
+                                    ? const Color(0xFFE6B450)
+                                    : const Color(0xFFB77B1F)),
                           if (!active) const SizedBox(height: 10),
                         ],
                       ),
@@ -1088,8 +1134,10 @@ class _NextEventTile extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: urgent
-            ? AppColors.secondaryContainer
-            : AppColors.surfaceContainer,
+            ? (_isDark(context)
+                ? AppColors.darkSecondaryContainer
+                : AppColors.secondaryContainer)
+            : _neutralContainer(context),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
@@ -1109,7 +1157,7 @@ class _NextEventTile extends StatelessWidget {
           const SizedBox(height: 8),
           Text(when,
               style: theme.textTheme.titleMedium?.copyWith(
-                color: urgent ? AppColors.primary : AppColors.onSurface,
+                color: urgent ? _good(context) : _valueColor(context),
               )),
           const SizedBox(height: 2),
           Text(detail,

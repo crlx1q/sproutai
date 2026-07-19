@@ -24,7 +24,7 @@ class AppColors {
   static const mintSoft = Color(0xFFD9EFE2);
   static const sage = Color(0xFFEEF4F0);
 
-  static const terracotta = Color(0xFF741B04);
+  static const terracotta = Color(0xFFC2371B);
   static const terracottaContainer = Color(0xFFFFDAD2);
   static const error = Color(0xFFBA1A1A);
 
