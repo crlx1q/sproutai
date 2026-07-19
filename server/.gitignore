@@ -1,0 +1,7 @@
+node_modules/
+uploads/
+.env
+firebase-service-account.json
+
+# Firebase secrets
+firebase-service-account.json
