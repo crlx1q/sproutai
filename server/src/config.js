@@ -12,6 +12,11 @@ export const config = {
   freeScansPerMonth: parseInt(process.env.FREE_SCANS_PER_MONTH || '5', 10),
   firebaseServiceAccountPath:
     process.env.FIREBASE_SERVICE_ACCOUNT || './firebase-service-account.json',
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+    apiKey: process.env.CLOUDINARY_API_KEY,
+    apiSecret: process.env.CLOUDINARY_API_SECRET,
+  },
   accessTokenTtl: '30m',
   refreshTokenTtl: '90d',
 };
