@@ -312,7 +312,7 @@ class _PlantDetailsView extends ConsumerWidget {
                   physics: const NeverScrollableScrollPhysics(),
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
-                  childAspectRatio: 1.3,
+                  childAspectRatio: 1.15,
                   children: [
                     _CareTile(
                       icon: Icons.water_drop_outlined,
@@ -596,7 +596,7 @@ class _CareTile extends StatelessWidget {
               fontWeight: FontWeight.w600,
               color: AppColors.onSurface,
             ),
-            maxLines: 2,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
         ],
