@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 
 import '../core/api.dart';
 import '../core/theme.dart';
@@ -25,11 +26,16 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
   int _wateringDays = 7;
   XFile? _photo;
   bool _busy = false;
+  String _origin = 'existing';
+  String _stage = 'seedling';
+  DateTime _plantedAt = DateTime.now();
+  final _goal = TextEditingController();
 
   @override
   void dispose() {
     _name.dispose();
     _species.dispose();
+    _goal.dispose();
     super.dispose();
   }
 
@@ -47,6 +53,10 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
             name: _name.text.trim(),
             species: _species.text.trim(),
             location: _location,
+            origin: _origin,
+            stage: _origin == 'grown' ? _stage : null,
+            plantedAt: _origin == 'grown' ? _plantedAt : null,
+            growthGoal: _origin == 'grown' ? _goal.text.trim() : null,
             photo: _photo != null
                 ? await MultipartFile.fromFile(_photo!.path, filename: 'plant.jpg')
                 : null,
@@ -138,6 +148,11 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
                 ),
               ),
               const SizedBox(height: 24),
+              _OriginSelector(
+                origin: _origin,
+                onChanged: (v) => setState(() => _origin = v),
+              ),
+              const SizedBox(height: 20),
               TextFormField(
                 controller: _name,
                 textCapitalization: TextCapitalization.sentences,
@@ -171,6 +186,52 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
                   ),
                 ],
               ),
+              if (_origin == 'grown') ...[
+                const SizedBox(height: 24),
+                Text('Стадия роста', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final s in _stageOptions.entries)
+                      ChoiceChip(
+                        label: Text(s.value),
+                        selected: _stage == s.key,
+                        onSelected: (_) => setState(() => _stage = s.key),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Посажено: ${DateFormat('d MMM y', 'ru').format(_plantedAt)}',
+                        style: theme.textTheme.titleMedium,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: _plantedAt,
+                          firstDate: DateTime(2015),
+                          lastDate: DateTime.now(),
+                        );
+                        if (picked != null) setState(() => _plantedAt = picked);
+                      },
+                      child: const Text('Изменить'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _goal,
+                  decoration: const InputDecoration(
+                      hintText: 'Цель, например «зацвести к лету» (необязательно)'),
+                ),
+              ],
               const SizedBox(height: 24),
               Text('Полив: раз в $_wateringDays дн.',
                   style: theme.textTheme.titleMedium),
@@ -250,6 +311,44 @@ class _LocationChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+
+const Map<String, String> _stageOptions = {
+  'seed': 'Семя',
+  'sprout': 'Росток',
+  'seedling': 'Саженец',
+  'growing': 'Растёт',
+  'mature': 'Взрослое',
+  'flowering': 'Цветёт',
+};
+
+class _OriginSelector extends StatelessWidget {
+  const _OriginSelector({required this.origin, required this.onChanged});
+
+  final String origin;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _LocationChip(
+          label: 'Уже есть',
+          icon: Icons.eco_outlined,
+          selected: origin == 'existing',
+          onTap: () => onChanged('existing'),
+        ),
+        const SizedBox(width: 10),
+        _LocationChip(
+          label: 'Расту с нуля',
+          icon: Icons.spa_outlined,
+          selected: origin == 'grown',
+          onTap: () => onChanged('grown'),
+        ),
+      ],
     );
   }
 }

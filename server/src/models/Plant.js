@@ -19,6 +19,14 @@ const plantSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     species: { type: String, default: '' },
     location: { type: String, enum: ['indoor', 'outdoor'], default: 'indoor' },
+    origin: { type: String, enum: ['existing', 'grown'], default: 'existing' },
+    stage: {
+      type: String,
+      enum: ['seed', 'sprout', 'seedling', 'growing', 'mature', 'flowering'],
+      default: 'mature',
+    },
+    plantedAt: { type: Date, default: null },
+    growthGoal: { type: String, default: '' },
     photoUrl: { type: String, default: null },
     healthStatus: {
       type: String,
@@ -32,11 +40,15 @@ const plantSchema = new mongoose.Schema(
       light: { type: String, default: 'Непрямой свет' },
       fertilizerIntervalDays: { type: Number, default: 30 },
       temperature: { type: String, default: '18-24°C' },
+      checkupIntervalDays: { type: Number, default: 14 },
     },
     lastWateredAt: { type: Date, default: null },
     lastFertilizedAt: { type: Date, default: null },
     lastWaterNotifiedAt: { type: Date, default: null },
     lastFertilizeNotifiedAt: { type: Date, default: null },
+    lastCheckupAt: { type: Date, default: null },
+    nextCheckupAt: { type: Date, default: null },
+    lastCheckupNotifiedAt: { type: Date, default: null },
     lastDiagnosis: { type: diagnosisSchema, default: null },
   },
   { timestamps: true }
@@ -50,6 +62,13 @@ plantSchema.methods.wateringDueAt = function () {
 plantSchema.methods.fertilizingDueAt = function () {
   const base = this.lastFertilizedAt || this.createdAt;
   return new Date(base.getTime() + this.care.fertilizerIntervalDays * 86400000);
+};
+
+plantSchema.methods.checkupDueAt = function () {
+  if (this.nextCheckupAt) return this.nextCheckupAt;
+  const days = (this.care && this.care.checkupIntervalDays) || 14;
+  const base = this.lastCheckupAt || this.createdAt;
+  return new Date(base.getTime() + days * 86400000);
 };
 
 export const Plant = mongoose.model('Plant', plantSchema);

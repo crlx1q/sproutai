@@ -61,6 +61,10 @@ router.post('/', upload.single('image'), async (req, res) => {
   try {
     result = await analyzePlantImage(geminiJpeg, {
       previousDiagnosis: plant?.lastDiagnosis || null,
+      plantContext: plant
+        ? { name: plant.name, species: plant.species, location: plant.location, stage: plant.stage }
+        : null,
+      mode: plant?.origin === 'grown' ? 'grow' : 'diagnose',
     });
   } catch (err) {
     console.error('[scan] gemini error:', err.message);
@@ -94,6 +98,10 @@ router.post('/', upload.single('image'), async (req, res) => {
         ? 'needs_attention'
         : 'sick';
     if (!plant.species && result.species) plant.species = result.species;
+    const nextDays = result.nextCheckupDays || plant.care.checkupIntervalDays || 14;
+    plant.care.checkupIntervalDays = nextDays;
+    plant.lastCheckupAt = new Date();
+    plant.nextCheckupAt = new Date(Date.now() + nextDays * 86400000);
     await plant.save();
   }
 

@@ -4,9 +4,10 @@ import { sendToUser, isPushEnabled } from './push.js';
 const CHECK_INTERVAL_MS = 15 * 60 * 1000; // проверка каждые 15 минут
 
 /**
- * Один проход: находим растения, которым пора полив/удобрение,
- * и шлём пуш владельцу. Каждый цикл ухода уведомляем только один раз
- * (сравниваем время «пора» с временем последнего уведомления).
+ * Один проход: находим растения, которым пора полив/удобрение/
+ * контрольное фото, и шлём пуш владельцу. Каждый цикл ухода
+ * уведомляем только один раз (сравниваем время «пора» с временем
+ * последнего уведомления).
  */
 async function runOnce() {
   if (!isPushEnabled()) return;
@@ -41,6 +42,21 @@ async function runOnce() {
         plant.lastFertilizeNotifiedAt = now;
         await plant.save();
       }
+
+      // Контрольное фото: ПОРА перефотографировать растение, чтобы ИИ обновил состояние.
+      const checkupDue = plant.checkupDueAt();
+      if (
+        checkupDue <= now &&
+        (!plant.lastCheckupNotifiedAt || plant.lastCheckupNotifiedAt < checkupDue)
+      ) {
+        await sendToUser(plant.userId, {
+          title: `Пора обновить фото: ${plant.name} 📸`,
+          body: `ИИ проверит, как ${plant.name} изменилось. Сделайте свежее фото в Sprout AI.`,
+          data: { type: 'checkup', plantId: String(plant._id) },
+        });
+        plant.lastCheckupNotifiedAt = now;
+        await plant.save();
+      }
     } catch (err) {
       console.error('[scheduler] plant', String(plant._id), err.message);
     }
@@ -57,3 +73,5 @@ export function startReminderScheduler() {
   }, 60 * 1000);
   console.log('[scheduler] reminder scheduler started');
 }
+
+export { runOnce };

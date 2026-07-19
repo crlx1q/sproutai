@@ -37,6 +37,7 @@ class PlantCare {
     required this.light,
     required this.fertilizerIntervalDays,
     required this.temperature,
+    this.checkupIntervalDays = 14,
   });
 
   final int wateringIntervalDays;
@@ -44,6 +45,7 @@ class PlantCare {
   final String light;
   final int fertilizerIntervalDays;
   final String temperature;
+  final int checkupIntervalDays;
 
   factory PlantCare.fromJson(Map<String, dynamic>? json) => PlantCare(
         wateringIntervalDays: (json?['wateringIntervalDays'] ?? 7) as int,
@@ -51,6 +53,7 @@ class PlantCare {
         light: (json?['light'] ?? 'Непрямой свет') as String,
         fertilizerIntervalDays: (json?['fertilizerIntervalDays'] ?? 30) as int,
         temperature: (json?['temperature'] ?? '18-24°C') as String,
+        checkupIntervalDays: (json?['checkupIntervalDays'] ?? 14) as int,
       );
 
   Map<String, dynamic> toJson() => {
@@ -59,6 +62,7 @@ class PlantCare {
         'light': light,
         'fertilizerIntervalDays': fertilizerIntervalDays,
         'temperature': temperature,
+        'checkupIntervalDays': checkupIntervalDays,
       };
 }
 
@@ -108,6 +112,12 @@ class Plant {
     this.fertilizingDueAt,
     required this.needsWater,
     this.needsFertilizer = false,
+    this.origin = 'existing',
+    this.stage = 'mature',
+    this.plantedAt,
+    this.growthGoal = '',
+    this.checkupDueAt,
+    this.needsCheckup = false,
   });
 
   final String id;
@@ -125,6 +135,14 @@ class Plant {
   final DateTime? fertilizingDueAt;
   final bool needsWater;
   final bool needsFertilizer;
+  final String origin;
+  final String stage;
+  final DateTime? plantedAt;
+  final String growthGoal;
+  final DateTime? checkupDueAt;
+  final bool needsCheckup;
+
+  bool get isGrown => origin == 'grown';
 
   factory Plant.fromJson(Map<String, dynamic> json) => Plant(
         id: json['_id'] as String,
@@ -152,6 +170,16 @@ class Plant {
             : null,
         needsWater: (json['needsWater'] ?? false) as bool,
         needsFertilizer: (json['needsFertilizer'] ?? false) as bool,
+        origin: (json['origin'] ?? 'existing') as String,
+        stage: (json['stage'] ?? 'mature') as String,
+        plantedAt: json['plantedAt'] != null
+            ? DateTime.tryParse(json['plantedAt'] as String)
+            : null,
+        growthGoal: (json['growthGoal'] ?? '') as String,
+        checkupDueAt: json['checkupDueAt'] != null
+            ? DateTime.tryParse(json['checkupDueAt'] as String)
+            : null,
+        needsCheckup: (json['needsCheckup'] ?? false) as bool,
       );
 }
 

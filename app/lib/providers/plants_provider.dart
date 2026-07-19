@@ -33,11 +33,19 @@ class PlantsNotifier extends AsyncNotifier<List<Plant>> {
     String location = 'indoor',
     MultipartFile? photo,
     Map<String, dynamic>? care,
+    String origin = 'existing',
+    String? stage,
+    DateTime? plantedAt,
+    String? growthGoal,
   }) async {
     final form = FormData.fromMap({
       'name': name,
       if (species != null) 'species': species,
       'location': location,
+      'origin': origin,
+      if (stage != null) 'stage': stage,
+      if (plantedAt != null) 'plantedAt': plantedAt.toIso8601String(),
+      if (growthGoal != null && growthGoal.isNotEmpty) 'growthGoal': growthGoal,
       if (photo != null) 'photo': photo,
       if (care != null) 'care': care,
     });
@@ -60,6 +68,22 @@ class PlantsNotifier extends AsyncNotifier<List<Plant>> {
   Future<void> deletePlant(String plantId) async {
     await _api.dio.delete('/api/plants/$plantId');
     await reload();
+  }
+
+  /// Плановый ИИ-чекап: отправляем свежее фото, ИИ обновляет состояние
+  /// растения и добавляет запись в историю. Возвращает тело ответа.
+  Future<Map<String, dynamic>> checkup(
+    String plantId,
+    MultipartFile photo, {
+    String? note,
+  }) async {
+    final form = FormData.fromMap({
+      'photo': photo,
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+    final res = await _api.dio.post('/api/plants/$plantId/checkup', data: form);
+    await reload();
+    return res.data as Map<String, dynamic>;
   }
 }
 

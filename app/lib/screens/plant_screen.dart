@@ -148,6 +148,24 @@ class _PlantDetailsView extends ConsumerWidget {
                               fontWeight: FontWeight.w600),
                         ),
                       ),
+                      if (plant.isGrown) ...[
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: AppColors.secondary.withValues(alpha: 0.9),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Text(
+                            '🌱 ${stageLabel(plant.stage)}',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -226,6 +244,12 @@ class _PlantDetailsView extends ConsumerWidget {
                       ),
                     ],
                   ),
+                ),
+
+                const SizedBox(height: 16),
+                _CheckupCard(
+                  plant: plant,
+                  onCheckup: () => _runCheckup(context, ref, plant),
                 ),
 
                 // Диагноз ИИ
@@ -346,12 +370,12 @@ class _PlantDetailsView extends ConsumerWidget {
 
                 const SizedBox(height: 28),
                 SectionHeader(
-                  title: 'Журнал роста',
+                  title: 'История растения (до/после)',
                   action: 'Добавить',
                   onAction: () => _addJournalEntry(context, ref, plant.id),
                 ),
                 const SizedBox(height: 4),
-                Text('Отслеживание прогресса лечения',
+                Text('Прогресс по месяцам — фото и оценки ИИ',
                     style: theme.textTheme.labelSmall),
                 const SizedBox(height: 14),
                 if (details.journal.isEmpty)
@@ -363,7 +387,7 @@ class _PlantDetailsView extends ConsumerWidget {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Добавьте фото «до» — и следите, как растение восстанавливается.',
+                            'Сделайте первое фото — и следите, как растение меняется со временем.',
                             style: theme.textTheme.bodyMedium,
                           ),
                         ),
@@ -371,13 +395,144 @@ class _PlantDetailsView extends ConsumerWidget {
                     ),
                   )
                 else
-                  ...details.journal.map((e) => _JournalCard(entry: e)),
+                  ..._buildTimeline(context, details.journal),
               ],
             ),
           ),
         ),
       ],
     );
+  }
+
+  Future<void> _runCheckup(
+      BuildContext context, WidgetRef ref, Plant plant) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Сделать фото'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Выбрать из галереи'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    final picked = await ImagePicker()
+        .pickImage(source: source, maxWidth: 1600, imageQuality: 88);
+    if (picked == null) return;
+
+    if (context.mounted) {
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(
+            child: CircularProgressIndicator(color: AppColors.primary)),
+      );
+    }
+
+    try {
+      final photo =
+          await MultipartFile.fromFile(picked.path, filename: 'checkup.jpg');
+      final data =
+          await ref.read(plantsProvider.notifier).checkup(plant.id, photo);
+      ref.invalidate(plantDetailsProvider(plant.id));
+      if (context.mounted) {
+        Navigator.of(context).pop(); // убрать лоадер
+        final result = (data['result'] as Map?)?.cast<String, dynamic>();
+        final advice = (data['growthAdvice'] as List?)?.cast<String>() ?? [];
+        await _showCheckupResult(context, result, advice);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
+      }
+    }
+  }
+
+  Future<void> _showCheckupResult(BuildContext context,
+      Map<String, dynamic>? result, List<String> advice) async {
+    final score = (result?['healthScore'] as num?)?.toInt();
+    final progress = (result?['progressNote'] ?? '') as String;
+    final title =
+        ((result?['diagnosis'] as Map?)?['title'] ?? 'Готово') as String;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Text(score != null ? 'Состояние: $score/100' : 'Готово'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+            if (progress.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(progress),
+            ],
+            if (advice.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Text('Что сделать:',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              ...advice.map((a) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text('• $a'),
+                  )),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Отлично'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildTimeline(
+      BuildContext context, List<JournalEntry> journal) {
+    final widgets = <Widget>[];
+    String? currentMonth;
+    for (final entry in journal) {
+      final month = DateFormat('LLLL yyyy', 'ru').format(entry.createdAt);
+      if (month != currentMonth) {
+        currentMonth = month;
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 10),
+          child: Text(
+            month.isNotEmpty
+                ? month[0].toUpperCase() + month.substring(1)
+                : month,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: AppColors.secondary,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ));
+      }
+      widgets.add(_JournalCard(entry: entry));
+    }
+    return widgets;
   }
 
   Future<void> _editCare(
@@ -554,6 +709,87 @@ class _PlantDetailsView extends ConsumerWidget {
       ref.invalidate(plantDetailsProvider(plantId));
       await ref.read(plantsProvider.notifier).reload();
     }
+  }
+}
+
+String stageLabel(String stage) {
+  switch (stage) {
+    case 'seed':
+      return 'Семя';
+    case 'sprout':
+      return 'Росток';
+    case 'seedling':
+      return 'Саженец';
+    case 'growing':
+      return 'Растёт';
+    case 'flowering':
+      return 'Цветёт';
+    case 'mature':
+    default:
+      return 'Взрослое';
+  }
+}
+
+class _CheckupCard extends StatelessWidget {
+  const _CheckupCard({required this.plant, required this.onCheckup});
+
+  final Plant plant;
+  final VoidCallback onCheckup;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final due = plant.checkupDueAt;
+    final overdue = plant.needsCheckup;
+    String when;
+    if (due == null) {
+      when = 'по расписанию';
+    } else {
+      final days = due.difference(DateTime.now()).inDays;
+      if (overdue || days <= 0) {
+        when = 'пора обновить фото';
+      } else {
+        when = 'через $days дн. (${DateFormat('d MMM', 'ru').format(due)})';
+      }
+    }
+    return SoftCard(
+      color: overdue ? AppColors.terracottaContainer : AppColors.mintSoft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.camera_alt_outlined,
+                  size: 19,
+                  color: overdue ? AppColors.terracotta : AppColors.secondary),
+              const SizedBox(width: 8),
+              Text('КОНТРОЛЬ СОСТОЯНИЯ',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    letterSpacing: 1.2,
+                    fontWeight: FontWeight.w700,
+                    color: overdue ? AppColors.terracotta : AppColors.secondary,
+                  )),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            plant.isGrown
+                ? 'ИИ следит за ростом. Новое фото: $when.'
+                : 'Периодически обновляйте фото — ИИ сравнит и обновит состояние. Новое фото: $when.',
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: onCheckup,
+              icon: const Icon(Icons.add_a_photo_outlined, size: 19),
+              label: const Text('Перефотографировать'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

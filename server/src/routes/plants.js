@@ -15,6 +15,8 @@ function plantView(plant) {
   obj.needsWater = plant.wateringDueAt() <= new Date();
   obj.fertilizingDueAt = plant.fertilizingDueAt();
   obj.needsFertilizer = plant.fertilizingDueAt() <= new Date();
+  obj.checkupDueAt = plant.checkupDueAt();
+  obj.needsCheckup = plant.checkupDueAt() <= new Date();
   return obj;
 }
 
@@ -59,8 +61,10 @@ function parseMaybe(value) {
 }
 
 router.post('/', upload.single('photo'), async (req, res) => {
-  const { name, species, location, care, healthScore, healthStatus, isHealthy, diagnosis, scanId } =
-    req.body || {};
+  const {
+    name, species, location, care, healthScore, healthStatus, isHealthy, diagnosis, scanId,
+    origin, stage, plantedAt, growthGoal,
+  } = req.body || {};
   if (!name) return res.status(400).json({ error: 'Нужно имя растения' });
 
   let photoUrl = req.body.photoUrl || null;
@@ -68,11 +72,17 @@ router.post('/', upload.single('photo'), async (req, res) => {
 
   const careObj = parseMaybe(care);
 
+  const validStages = ['seed', 'sprout', 'seedling', 'growing', 'mature', 'flowering'];
+  const isGrown = origin === 'grown';
   const doc = {
     userId: req.user._id,
     name,
     species: species || '',
     location: location === 'outdoor' ? 'outdoor' : 'indoor',
+    origin: isGrown ? 'grown' : 'existing',
+    stage: validStages.includes(stage) ? stage : (isGrown ? 'seedling' : 'mature'),
+    plantedAt: plantedAt ? new Date(plantedAt) : (isGrown ? new Date() : null),
+    growthGoal: growthGoal || '',
     photoUrl,
     care: careObj,
     lastWateredAt: new Date(),
@@ -193,6 +203,107 @@ router.post('/:id/fertilize', async (req, res) => {
   plant.lastFertilizedAt = new Date();
   await plant.save();
   res.json({ plant: plantView(plant) });
+});
+
+// Плановый ИИ-чекап: перефотографируем растение, ИИ сравнивает с прошлым
+// состоянием, обновляет здоровье/диагноз/уход и пишет запись «до/после».
+router.post('/:id/checkup', upload.single('photo'), async (req, res) => {
+  const plant = await findOwnPlant(req, res);
+  if (!plant) return;
+  if (!req.file) return res.status(400).json({ error: 'Нужно фото для чекапа' });
+
+  const note = (req.body && req.body.note) || '';
+  const prevPhotoUrl = plant.photoUrl;
+  const prevScore = typeof plant.healthScore === 'number' ? plant.healthScore : null;
+
+  const [photoUrl, geminiJpeg] = await Promise.all([
+    saveImage(req.file.buffer),
+    toGeminiJpeg(req.file.buffer),
+  ]);
+
+  let result;
+  try {
+    result = await analyzePlantImage(geminiJpeg, {
+      previousDiagnosis: plant.lastDiagnosis || null,
+      plantContext: {
+        name: plant.name,
+        species: plant.species,
+        location: plant.location,
+        stage: plant.stage,
+        plantedAt: plant.plantedAt,
+      },
+      mode: plant.origin === 'grown' ? 'grow' : 'diagnose',
+    });
+  } catch (err) {
+    console.error('[checkup] gemini error:', err.message);
+    return res.status(502).json({ error: 'ИИ временно недоступен, попробуйте ещё раз' });
+  }
+
+  const now = new Date();
+  const entryData = {
+    userId: req.user._id,
+    plantId: plant._id,
+    photoUrl,
+    note,
+    kind: 'progress',
+  };
+
+  if (result.isPlant) {
+    const status = result.isHealthy
+      ? 'thriving'
+      : result.healthScore >= 55 ? 'needs_attention' : 'sick';
+    entryData.healthScore = result.healthScore;
+    entryData.healthStatus = status;
+    entryData.analysis = result.progressNote || result.diagnosis?.description || '';
+    if (prevScore != null) {
+      entryData.trend =
+        result.healthScore > prevScore + 2 ? 'up'
+          : result.healthScore < prevScore - 2 ? 'down'
+            : 'same';
+    }
+
+    plant.healthScore = result.healthScore;
+    plant.healthStatus = status;
+    plant.lastDiagnosis = {
+      isHealthy: result.isHealthy,
+      title: result.diagnosis?.title || '',
+      description: result.diagnosis?.description || '',
+      confidence: Number(result.diagnosis?.confidence) || 0,
+      treatmentPlan: Array.isArray(result.treatmentPlan) ? result.treatmentPlan : [],
+      scannedAt: now,
+    };
+    if (result.species) plant.species = result.species;
+    const validStages = ['seed', 'sprout', 'seedling', 'growing', 'mature', 'flowering'];
+    if (validStages.includes(result.growthStage)) plant.stage = result.growthStage;
+    if (result.careAdvice) {
+      const c = result.careAdvice;
+      if (c.wateringIntervalDays) plant.care.wateringIntervalDays = c.wateringIntervalDays;
+      if (c.waterAmountMl) plant.care.waterAmountMl = c.waterAmountMl;
+      if (c.light) plant.care.light = c.light;
+      if (c.fertilizerIntervalDays) plant.care.fertilizerIntervalDays = c.fertilizerIntervalDays;
+      if (c.temperature) plant.care.temperature = c.temperature;
+    }
+    // Свежая фотка становится главной.
+    plant.photoUrl = photoUrl;
+  }
+
+  // Планируем следующий чекап.
+  const nextDays = result.nextCheckupDays || plant.care.checkupIntervalDays || 14;
+  plant.care.checkupIntervalDays = nextDays;
+  plant.lastCheckupAt = now;
+  plant.nextCheckupAt = new Date(now.getTime() + nextDays * 86400000);
+  plant.lastCheckupNotifiedAt = now;
+  await plant.save();
+
+  const entry = await JournalEntry.create(entryData);
+
+  res.status(201).json({
+    entry,
+    plant: plantView(plant),
+    result,
+    previousPhotoUrl: prevPhotoUrl,
+    growthAdvice: Array.isArray(result.growthAdvice) ? result.growthAdvice : [],
+  });
 });
 
 // Журнал роста «до/после».
