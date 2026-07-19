@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Secrets — НИКОГДА не коммитить
+.env
+**/.env
+server/firebase-service-account.json
+**/firebase-service-account.json
+
+# Flutter / Dart
+app/.dart_tool/
+app/build/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+.dart_tool/
+build/
+
+# Misc
+*.log
+.DS_Store
