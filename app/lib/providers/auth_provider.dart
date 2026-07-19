@@ -70,7 +70,11 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   void _registerPush() {
-    PushService.instance.registerToken(_api);
+    // Пуши не критичны для входа: любые ошибки инициализации гасим здесь,
+    // чтобы они не всплывали как «Что-то пошло не так» на экране входа.
+    try {
+      PushService.instance.registerToken(_api);
+    } catch (_) {}
   }
 
   Future<void> logout() async {
