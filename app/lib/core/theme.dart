@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 /// Палитра «Botanical Modern» из DESIGN.md.
 class AppColors {
@@ -55,31 +54,75 @@ class AppTheme {
     required Color body,
     required Color faint,
   }) {
-    final base = GoogleFonts.workSansTextTheme();
+    final base = ThemeData().textTheme.apply(
+      fontFamily: 'WorkSans',
+      fontFamilyFallback: const ['NotoSans'],
+      bodyColor: body,
+      displayColor: heading,
+    );
     return base.copyWith(
-      displayLarge: GoogleFonts.literata(
-        fontSize: 40, fontWeight: FontWeight.w700, height: 1.2,
-        letterSpacing: -0.8, color: heading,
+      displayLarge: TextStyle(
+        fontFamily: 'Literata',
+        fontSize: 40,
+        fontWeight: FontWeight.w700,
+        height: 1.2,
+        letterSpacing: -0.8,
+        color: heading,
       ),
-      headlineLarge: GoogleFonts.literata(
-        fontSize: 28, fontWeight: FontWeight.w600, height: 1.28, color: heading,
+      headlineLarge: TextStyle(
+        fontFamily: 'Literata',
+        fontSize: 28,
+        fontWeight: FontWeight.w600,
+        height: 1.28,
+        color: heading,
       ),
-      headlineMedium: GoogleFonts.literata(
-        fontSize: 24, fontWeight: FontWeight.w500, height: 1.33, color: heading,
+      headlineMedium: TextStyle(
+        fontFamily: 'Literata',
+        fontSize: 24,
+        fontWeight: FontWeight.w500,
+        height: 1.33,
+        color: heading,
       ),
-      titleLarge: GoogleFonts.literata(
-        fontSize: 20, fontWeight: FontWeight.w600, color: strong,
+      titleLarge: TextStyle(
+        fontFamily: 'Literata',
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+        color: strong,
       ),
-      titleMedium: GoogleFonts.literata(
-        fontSize: 17, fontWeight: FontWeight.w600, color: strong,
+      titleMedium: TextStyle(
+        fontFamily: 'Literata',
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+        color: strong,
       ),
-      bodyLarge: GoogleFonts.workSans(fontSize: 17, height: 1.55, color: strong),
-      bodyMedium: GoogleFonts.workSans(fontSize: 15, height: 1.5, color: body),
-      labelLarge: GoogleFonts.workSans(
-        fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: 0.7, color: body,
+      bodyLarge: TextStyle(
+        fontFamily: 'WorkSans',
+        fontFamilyFallback: const ['NotoSans'],
+        fontSize: 17,
+        height: 1.55,
+        color: strong,
       ),
-      labelSmall: GoogleFonts.workSans(
-        fontSize: 12, fontWeight: FontWeight.w500, color: faint,
+      bodyMedium: TextStyle(
+        fontFamily: 'WorkSans',
+        fontFamilyFallback: const ['NotoSans'],
+        fontSize: 15,
+        height: 1.5,
+        color: body,
+      ),
+      labelLarge: TextStyle(
+        fontFamily: 'WorkSans',
+        fontFamilyFallback: const ['NotoSans'],
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.7,
+        color: body,
+      ),
+      labelSmall: TextStyle(
+        fontFamily: 'WorkSans',
+        fontFamilyFallback: const ['NotoSans'],
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        color: faint,
       ),
     );
   }
@@ -110,19 +153,31 @@ class AppTheme {
         onTertiaryContainer: AppColors.terracotta,
         error: AppColors.error,
         surface: AppColors.surface,
+        surfaceContainerLow: AppColors.surfaceContainerLow,
+        surfaceContainer: AppColors.surfaceContainer,
+        surfaceContainerHigh: AppColors.surfaceContainerHigh,
         onSurface: AppColors.onSurface,
         onSurfaceVariant: AppColors.onSurfaceVariant,
         outline: AppColors.outline,
         outlineVariant: AppColors.outlineVariant,
       ),
       textTheme: textTheme,
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: AppColors.surface,
+        modalBackgroundColor: AppColors.surface,
+        surfaceTintColor: Colors.transparent,
+      ),
+      dialogTheme: const DialogThemeData(backgroundColor: AppColors.surface),
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.surface,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: true,
-        titleTextStyle: GoogleFonts.literata(
-          fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.primary,
+        titleTextStyle: TextStyle(
+          fontFamily: 'Literata',
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          color: AppColors.primary,
         ),
         iconTheme: const IconThemeData(color: AppColors.onSurface),
       ),
@@ -139,8 +194,15 @@ class AppTheme {
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
           minimumSize: const Size.fromHeight(54),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          textStyle: GoogleFonts.workSans(fontSize: 16, fontWeight: FontWeight.w600),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: TextStyle(
+            fontFamily: 'WorkSans',
+            fontFamilyFallback: const ['NotoSans'],
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -148,37 +210,68 @@ class AppTheme {
           foregroundColor: AppColors.primary,
           side: const BorderSide(color: AppColors.primary, width: 1.4),
           minimumSize: const Size.fromHeight(54),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          textStyle: GoogleFonts.workSans(fontSize: 16, fontWeight: FontWeight.w600),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: TextStyle(
+            fontFamily: 'WorkSans',
+            fontFamilyFallback: const ['NotoSans'],
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.secondary,
-          textStyle: GoogleFonts.workSans(fontSize: 14.5, fontWeight: FontWeight.w600),
+          textStyle: TextStyle(
+            fontFamily: 'WorkSans',
+            fontFamilyFallback: const ['NotoSans'],
+            fontSize: 14.5,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
+        errorMaxLines: 3,
         filled: true,
         fillColor: AppColors.surfaceContainerLow,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 16,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.primaryContainer, width: 1.6),
+          borderSide: const BorderSide(
+            color: AppColors.primaryContainer,
+            width: 1.6,
+          ),
         ),
-        hintStyle: GoogleFonts.workSans(color: AppColors.outline, fontSize: 15),
+        hintStyle: TextStyle(
+          fontFamily: 'WorkSans',
+          fontFamilyFallback: const ['NotoSans'],
+          color: AppColors.outline,
+          fontSize: 15,
+        ),
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: AppColors.primaryContainer,
-        contentTextStyle: GoogleFonts.workSans(color: Colors.white, fontSize: 14.5),
+        contentTextStyle: TextStyle(
+          fontFamily: 'WorkSans',
+          fontFamilyFallback: const ['NotoSans'],
+          color: Colors.white,
+          fontSize: 14.5,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
-      dividerTheme: const DividerThemeData(color: AppColors.surfaceContainerHigh),
+      dividerTheme: const DividerThemeData(
+        color: AppColors.surfaceContainerHigh,
+      ),
     );
   }
 
@@ -208,19 +301,33 @@ class AppTheme {
         onTertiaryContainer: AppColors.terracottaContainer,
         error: Color(0xFFFFB4AB),
         surface: AppColors.darkSurface,
+        surfaceContainerLow: AppColors.darkSurfaceContainerLow,
+        surfaceContainer: AppColors.darkSurfaceContainer,
+        surfaceContainerHigh: AppColors.darkSurfaceContainerHigh,
         onSurface: AppColors.darkOnSurface,
         onSurfaceVariant: AppColors.darkOnSurfaceVariant,
         outline: AppColors.darkOutline,
         outlineVariant: AppColors.darkOutlineVariant,
       ),
       textTheme: textTheme,
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: AppColors.darkSurfaceContainer,
+        modalBackgroundColor: AppColors.darkSurfaceContainer,
+        surfaceTintColor: Colors.transparent,
+      ),
+      dialogTheme: const DialogThemeData(
+        backgroundColor: AppColors.darkSurfaceContainer,
+      ),
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.darkSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: true,
-        titleTextStyle: GoogleFonts.literata(
-          fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.darkOnSurface,
+        titleTextStyle: TextStyle(
+          fontFamily: 'Literata',
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          color: AppColors.darkOnSurface,
         ),
         iconTheme: const IconThemeData(color: AppColors.darkOnSurface),
       ),
@@ -237,8 +344,15 @@ class AppTheme {
           backgroundColor: AppColors.darkPrimary,
           foregroundColor: AppColors.darkOnPrimary,
           minimumSize: const Size.fromHeight(54),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          textStyle: GoogleFonts.workSans(fontSize: 16, fontWeight: FontWeight.w600),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: TextStyle(
+            fontFamily: 'WorkSans',
+            fontFamilyFallback: const ['NotoSans'],
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -246,33 +360,62 @@ class AppTheme {
           foregroundColor: AppColors.darkPrimary,
           side: const BorderSide(color: AppColors.darkPrimary, width: 1.4),
           minimumSize: const Size.fromHeight(54),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          textStyle: GoogleFonts.workSans(fontSize: 16, fontWeight: FontWeight.w600),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: TextStyle(
+            fontFamily: 'WorkSans',
+            fontFamilyFallback: const ['NotoSans'],
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.darkPrimary,
-          textStyle: GoogleFonts.workSans(fontSize: 14.5, fontWeight: FontWeight.w600),
+          textStyle: TextStyle(
+            fontFamily: 'WorkSans',
+            fontFamilyFallback: const ['NotoSans'],
+            fontSize: 14.5,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
+        errorMaxLines: 3,
         filled: true,
         fillColor: AppColors.darkSurfaceContainerLow,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 16,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.darkPrimary, width: 1.6),
+          borderSide: const BorderSide(
+            color: AppColors.darkPrimary,
+            width: 1.6,
+          ),
         ),
-        hintStyle: GoogleFonts.workSans(color: AppColors.darkOutline, fontSize: 15),
+        hintStyle: TextStyle(
+          fontFamily: 'WorkSans',
+          fontFamilyFallback: const ['NotoSans'],
+          color: AppColors.darkOutline,
+          fontSize: 15,
+        ),
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: AppColors.darkSurfaceContainerHigh,
-        contentTextStyle: GoogleFonts.workSans(color: AppColors.darkOnSurface, fontSize: 14.5),
+        contentTextStyle: TextStyle(
+          fontFamily: 'WorkSans',
+          fontFamilyFallback: const ['NotoSans'],
+          color: AppColors.darkOnSurface,
+          fontSize: 14.5,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
@@ -283,9 +426,5 @@ class AppTheme {
 
 /// Мягкая «зелёная» тень для карточек из дизайн-системы.
 List<BoxShadow> softShadow() => const [
-      BoxShadow(
-        color: AppColors.cardShadow,
-        blurRadius: 30,
-        offset: Offset(0, 10),
-      ),
-    ];
+  BoxShadow(color: AppColors.cardShadow, blurRadius: 30, offset: Offset(0, 10)),
+];

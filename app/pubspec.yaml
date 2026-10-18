@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 2.0.0+2
+version: 2.1.0+3
 
 environment:
   sdk: ^3.9.2
@@ -74,6 +74,38 @@ flutter:
 
   assets:
     - assets/logo.png
+
+  fonts:
+    - family: NotoSans
+      fonts:
+        - asset: assets/fonts/NotoSans.ttf
+          weight: 400
+        - asset: assets/fonts/NotoSans.ttf
+          weight: 500
+        - asset: assets/fonts/NotoSans.ttf
+          weight: 600
+        - asset: assets/fonts/NotoSans.ttf
+          weight: 700
+    - family: WorkSans
+      fonts:
+        - asset: assets/fonts/WorkSans.ttf
+          weight: 400
+        - asset: assets/fonts/WorkSans.ttf
+          weight: 500
+        - asset: assets/fonts/WorkSans.ttf
+          weight: 600
+        - asset: assets/fonts/WorkSans.ttf
+          weight: 700
+    - family: Literata
+      fonts:
+        - asset: assets/fonts/Literata.ttf
+          weight: 400
+        - asset: assets/fonts/Literata.ttf
+          weight: 500
+        - asset: assets/fonts/Literata.ttf
+          weight: 600
+        - asset: assets/fonts/Literata.ttf
+          weight: 700
 
 flutter_launcher_icons:
   android: true

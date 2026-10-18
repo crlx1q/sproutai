@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { CARE_FIELDS, careDueAt, weeklyCheckupDueAt } from '../utils/plantCare.js';
 
 const diagnosisSchema = new mongoose.Schema(
   {
@@ -34,41 +35,48 @@ const plantSchema = new mongoose.Schema(
       default: 'thriving',
     },
     healthScore: { type: Number, min: 0, max: 100, default: 90 },
+    previousHealthScore: { type: Number, min: 0, max: 100, default: null },
+    healthTrend: { type: String, enum: ['up', 'down', 'same', null], default: null },
+    lastProgressNote: { type: String, default: '' },
+    careManualFields: { type: [{ type: String, enum: CARE_FIELDS }], default: [] },
     care: {
-      wateringIntervalDays: { type: Number, default: 7 },
-      waterAmountMl: { type: Number, default: 250 },
+      wateringIntervalDays: { type: Number, min: 1, max: 365, default: 7 },
+      waterAmountMl: { type: Number, min: 1, max: 100000, default: 250 },
       light: { type: String, default: 'Непрямой свет' },
-      fertilizerIntervalDays: { type: Number, default: 30 },
+      fertilizerIntervalDays: { type: Number, min: 1, max: 365, default: 30 },
       temperature: { type: String, default: '18-24°C' },
-      checkupIntervalDays: { type: Number, default: 14 },
+      checkupIntervalDays: { type: Number, min: 1, max: 365, default: 7 },
     },
     lastWateredAt: { type: Date, default: null },
     lastFertilizedAt: { type: Date, default: null },
+    wateringSnoozedUntil: { type: Date, default: null },
+    fertilizingSnoozedUntil: { type: Date, default: null },
     lastWaterNotifiedAt: { type: Date, default: null },
+    lastWaterDeliveredAt: { type: Date, default: null },
+    waterNotificationLockUntil: { type: Date, default: null },
     lastFertilizeNotifiedAt: { type: Date, default: null },
+    lastFertilizeDeliveredAt: { type: Date, default: null },
+    fertilizeNotificationLockUntil: { type: Date, default: null },
     lastCheckupAt: { type: Date, default: null },
     nextCheckupAt: { type: Date, default: null },
     lastCheckupNotifiedAt: { type: Date, default: null },
+    lastCheckupDeliveredAt: { type: Date, default: null },
+    checkupNotificationLockUntil: { type: Date, default: null },
     lastDiagnosis: { type: diagnosisSchema, default: null },
   },
   { timestamps: true }
 );
 
 plantSchema.methods.wateringDueAt = function () {
-  const base = this.lastWateredAt || this.createdAt;
-  return new Date(base.getTime() + this.care.wateringIntervalDays * 86400000);
+  return careDueAt(this.lastWateredAt || this.createdAt, this.care.wateringIntervalDays, this.wateringSnoozedUntil);
 };
 
 plantSchema.methods.fertilizingDueAt = function () {
-  const base = this.lastFertilizedAt || this.createdAt;
-  return new Date(base.getTime() + this.care.fertilizerIntervalDays * 86400000);
+  return careDueAt(this.lastFertilizedAt || this.createdAt, this.care.fertilizerIntervalDays, this.fertilizingSnoozedUntil);
 };
 
 plantSchema.methods.checkupDueAt = function () {
-  if (this.nextCheckupAt) return this.nextCheckupAt;
-  const days = (this.care && this.care.checkupIntervalDays) || 14;
-  const base = this.lastCheckupAt || this.createdAt;
-  return new Date(base.getTime() + days * 86400000);
+  return weeklyCheckupDueAt(this);
 };
 
 export const Plant = mongoose.model('Plant', plantSchema);

@@ -1,475 +1,302 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import { requireAuth } from '../middleware/auth.js';
 import { upload, saveImage, toGeminiJpeg } from '../utils/upload.js';
 import { analyzePlantImage } from '../services/gemini.js';
+import { scanQuota, AnalysisError } from '../services/scanQuota.js';
 import { Plant } from '../models/Plant.js';
 import { JournalEntry } from '../models/JournalEntry.js';
 import { Reminder } from '../models/Reminder.js';
+import { Scan } from '../models/Scan.js';
+import { plantView, ownPlantView, syncCareReminders, ensureBaseline, analysisOptions, baselineData } from '../services/plantProgress.js';
+import { DAY_MS, CHECKUP_DAYS, GROWTH_STAGES, applyPlantAnalysis, asDate, buildWeeklyHistory, changedCareFields, journalSnapshot, validateCare } from '../utils/plantCare.js';
 
 const router = Router();
 router.use(requireAuth);
 
-function plantView(plant) {
-  const obj = plant.toObject({ virtuals: false });
-  obj.wateringDueAt = plant.wateringDueAt();
-  obj.needsWater = plant.wateringDueAt() <= new Date();
-  obj.fertilizingDueAt = plant.fertilizingDueAt();
-  obj.needsFertilizer = plant.fertilizingDueAt() <= new Date();
-  obj.checkupDueAt = plant.checkupDueAt();
-  obj.needsCheckup = plant.checkupDueAt() <= new Date();
-  return obj;
+function parseMaybe(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  return typeof value === 'string' ? JSON.parse(value) : value;
+}
+
+function sendAnalysisError(res, error) {
+  if (error instanceof AnalysisError) return res.status(error.status).json({ error: error.message, code: error.code });
+  console.error('[plant analysis]', error.message);
+  return res.status(502).json({ error: 'Не удалось сохранить анализ. Попробуйте ещё раз: скан не списан.' });
 }
 
 router.get('/', async (req, res) => {
   const plants = await Plant.find({ userId: req.user._id }).sort({ createdAt: -1 });
-  res.json({ plants: plants.map(plantView) });
+  const reminders = await Reminder.find({ userId: req.user._id });
+  res.json({ plants: plants.map((p) => plantView(p, reminders)) });
 });
 
-// Задачи на сегодня: какие растения просят полив.
 router.get('/tasks/today', async (req, res) => {
   const plants = await Plant.find({ userId: req.user._id });
-  const now = new Date();
-  const needWater = plants.filter((p) => p.wateringDueAt() <= now).map(plantView);
-  res.json({ needWater, count: needWater.length });
+  const reminders = await Reminder.find({ userId: req.user._id });
+  const views = plants.map((p) => plantView(p, reminders));
+  const needWater = views.filter((p) => p.needsWater);
+  const needFertilizer = views.filter((p) => p.needsFertilizer);
+  const needCheckup = views.filter((p) => p.needsCheckup);
+  res.json({ needWater, needFertilizer, needCheckup, count: needWater.length + needFertilizer.length + needCheckup.length });
 });
 
 router.post('/water-all', async (req, res) => {
   const plants = await Plant.find({ userId: req.user._id });
   const now = new Date();
   const due = plants.filter((p) => p.wateringDueAt() <= now);
-  for (const p of due) {
-    p.lastWateredAt = now;
-    await p.save();
+  for (const plant of due) {
+    plant.lastWateredAt = now;
+    plant.wateringSnoozedUntil = null;
+    plant.lastWaterNotifiedAt = null;
+    plant.lastWaterDeliveredAt = null;
+    await plant.save();
+    await syncCareReminders(plant);
   }
-  await Reminder.updateMany(
-    { userId: req.user._id, plantId: { $in: due.map((p) => p._id) }, type: 'watering' },
-    [{ $set: { nextDueAt: { $dateAdd: { startDate: '$$NOW', unit: 'day', amount: '$intervalDays' } } } }]
-  );
   res.json({ watered: due.length });
 });
 
-function parseMaybe(value) {
-  if (value === undefined || value === null || value === '') return undefined;
-  if (typeof value === 'string') {
-    try {
-      return JSON.parse(value);
-    } catch {
-      return undefined;
-    }
-  }
-  return value;
-}
-
 router.post('/', upload.single('photo'), async (req, res) => {
-  const {
-    name, species, location, care, healthScore, healthStatus, isHealthy, diagnosis, scanId,
-    origin, stage, plantedAt, growthGoal,
-  } = req.body || {};
-  if (!name) return res.status(400).json({ error: 'Нужно имя растения' });
-
-  let photoUrl = req.body.photoUrl || null;
-  if (req.file) photoUrl = await saveImage(req.file.buffer);
-
-  const careObj = parseMaybe(care);
-
-  const validStages = ['seed', 'sprout', 'seedling', 'growing', 'mature', 'flowering'];
-  const isGrown = origin === 'grown';
+  const body = req.body || {};
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name || name.length > 100) return res.status(400).json({ error: 'Укажите имя растения до 100 символов' });
+  let care;
+  try { care = body.care ? validateCare(parseMaybe(body.care)) : { checkupIntervalDays: CHECKUP_DAYS }; }
+  catch (error) { return res.status(400).json({ error: error.message }); }
+  const plantedAt = body.plantedAt ? asDate(body.plantedAt) : null;
+  if (body.plantedAt && !plantedAt) return res.status(400).json({ error: 'Некорректная дата посадки' });
+  const grown = body.origin === 'grown';
   const doc = {
-    userId: req.user._id,
-    name,
-    species: species || '',
-    location: location === 'outdoor' ? 'outdoor' : 'indoor',
-    origin: isGrown ? 'grown' : 'existing',
-    stage: validStages.includes(stage) ? stage : (isGrown ? 'seedling' : 'mature'),
-    plantedAt: plantedAt ? new Date(plantedAt) : (isGrown ? new Date() : null),
-    growthGoal: growthGoal || '',
-    photoUrl,
-    care: careObj,
-    lastWateredAt: new Date(),
+    userId: req.user._id, name, species: String(body.species || '').trim().slice(0, 200),
+    location: body.location === 'outdoor' ? 'outdoor' : 'indoor', origin: grown ? 'grown' : 'existing',
+    stage: GROWTH_STAGES.includes(body.stage) ? body.stage : grown ? 'seedling' : 'mature',
+    plantedAt: plantedAt || (grown ? new Date() : null), growthGoal: String(body.growthGoal || '').slice(0, 2000),
+    photoUrl: typeof body.photoUrl === 'string' ? body.photoUrl : null, care: { ...care },
+    careManualFields: changedCareFields({}, care), lastWateredAt: new Date(),
   };
-
-  // Переносим результат скана, чтобы здоровье не сбрасывалось в дефолтные 90%.
-  const score = healthScore !== undefined ? Number(healthScore) : undefined;
-  const healthy = typeof isHealthy === 'string' ? isHealthy === 'true' : isHealthy;
-  if (Number.isFinite(score)) {
-    doc.healthScore = Math.max(0, Math.min(100, Math.round(score)));
+  let sourceScan = null;
+  if (body.scanId) {
+    if (!mongoose.isValidObjectId(body.scanId)) return res.status(400).json({ error: 'Некорректный скан' });
+    sourceScan = await Scan.findOne({ _id: body.scanId, userId: req.user._id });
+    if (!sourceScan?.result?.isPlant) return res.status(404).json({ error: 'Скан растения не найден' });
+    if (sourceScan.plantId) return res.status(409).json({ error: 'Этот скан уже сохранён в сад' });
+    doc.photoUrl = sourceScan.imageUrl;
   }
-  if (['thriving', 'needs_attention', 'sick'].includes(healthStatus)) {
-    doc.healthStatus = healthStatus;
-  } else if (doc.healthScore !== undefined) {
-    doc.healthStatus =
-      healthy === false
-        ? doc.healthScore >= 55
-          ? 'needs_attention'
-          : 'sick'
-        : 'thriving';
-  }
-  const diag = parseMaybe(diagnosis);
-  if (diag && (diag.title || diag.description)) {
-    doc.lastDiagnosis = {
-      isHealthy: healthy !== undefined ? healthy : diag.isHealthy ?? true,
-      title: diag.title || '',
-      description: diag.description || '',
-      confidence: Number(diag.confidence) || 0,
-      treatmentPlan: Array.isArray(diag.treatmentPlan) ? diag.treatmentPlan : [],
-      scanId: scanId || undefined,
-      scannedAt: new Date(),
-    };
-  }
-
-  // Автозаполнение по фото: если результат скана не передан, но есть фото —
-  // просим ИИ определить вид, здоровье и уход (кнопка «+», режим «с нуля»).
-  if (req.file && !Number.isFinite(score)) {
-    try {
-      const geminiJpeg = await toGeminiJpeg(req.file.buffer);
-      const result = await analyzePlantImage(geminiJpeg, {
-        plantContext: {
-          name: doc.name,
-          species: doc.species,
-          location: doc.location,
-          stage: doc.stage,
-          plantedAt: doc.plantedAt,
-        },
-        mode: isGrown ? 'grow' : 'diagnose',
-      });
-      if (result && result.isPlant) {
-        doc.healthScore = result.healthScore;
-        doc.healthStatus = result.isHealthy
-          ? 'thriving'
-          : result.healthScore >= 55 ? 'needs_attention' : 'sick';
-        if (!doc.species && result.species) doc.species = result.species;
-        const validGrowth = ['seed', 'sprout', 'seedling', 'growing', 'mature', 'flowering'];
-        if (isGrown && validGrowth.includes(result.growthStage)) {
-          doc.stage = result.growthStage;
-        }
-        if (result.diagnosis && (result.diagnosis.title || result.diagnosis.description)) {
-          doc.lastDiagnosis = {
-            isHealthy: result.isHealthy,
-            title: result.diagnosis.title || '',
-            description: result.diagnosis.description || '',
-            confidence: Number(result.diagnosis.confidence) || 0,
-            treatmentPlan: Array.isArray(result.treatmentPlan) ? result.treatmentPlan : [],
-            scannedAt: new Date(),
-          };
-        }
-        if (result.careAdvice) {
-          const c = result.careAdvice;
-          // ИИ задаёт базовый уход; ручные значения пользователя (если есть) важнее.
-          doc.care = {
-            wateringIntervalDays: c.wateringIntervalDays,
-            waterAmountMl: c.waterAmountMl,
-            light: c.light,
-            fertilizerIntervalDays: c.fertilizerIntervalDays,
-            temperature: c.temperature,
-            ...(careObj || {}),
-          };
-        }
-        if (Number.isFinite(Number(result.nextCheckupDays))) {
-          const days = Math.round(Number(result.nextCheckupDays));
-          doc.care = { ...(doc.care || {}), checkupIntervalDays: days };
-          doc.nextCheckupAt = new Date(Date.now() + days * 86400000);
-        }
-      }
-    } catch (err) {
-      console.error('[plants.create] авто-анализ не удался:', err.message);
+  async function persist(result) {
+    if (result) {
+      if (req.file && !sourceScan) doc.photoUrl = await saveImage(req.file.buffer);
+      applyPlantAnalysis(doc, result, { photoUrl: doc.photoUrl, scanId: sourceScan?._id });
+      doc.care = { ...doc.care, ...care };
     }
+    const plant = await Plant.create(doc);
+    if (sourceScan) {
+      const linked = await Scan.updateOne({ _id: sourceScan._id, plantId: null }, { $set: { plantId: plant._id } });
+      if (!linked.modifiedCount) {
+        await plant.deleteOne();
+        throw new AnalysisError('Этот скан уже сохранён в сад', 409, 'SCAN_ALREADY_SAVED');
+      }
+    }
+    await ensureBaseline(plant);
+    await syncCareReminders(plant);
+    return plant;
   }
-
-  const plant = await Plant.create(doc);
-
-  await Reminder.create({
-    userId: req.user._id,
-    plantId: plant._id,
-    type: 'watering',
-    intervalDays: plant.care.wateringIntervalDays,
-    nextDueAt: plant.wateringDueAt(),
-  });
-
-  res.status(201).json({ plant: plantView(plant) });
+  try {
+    let plant;
+    let quota;
+    if (req.file && !sourceScan) {
+      const jpeg = await toGeminiJpeg(req.file.buffer);
+      const outcome = await scanQuota.run(req.user, () => analyzePlantImage(jpeg, {
+        plantContext: doc, mode: grown ? 'grow' : 'diagnose',
+      }), persist);
+      plant = outcome.value;
+      quota = outcome.quota;
+    } else {
+      plant = await persist(sourceScan?.result || null);
+    }
+    res.status(201).json({ plant: await ownPlantView(plant), ...(quota ? { quota } : {}) });
+  } catch (error) { return sendAnalysisError(res, error); }
 });
 
 async function findOwnPlant(req, res) {
-  const plant = await Plant.findOne({ _id: req.params.id, userId: req.user._id });
-  if (!plant) {
-    res.status(404).json({ error: 'Растение не найдено' });
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    res.status(400).json({ error: 'Некорректный идентификатор растения' });
     return null;
   }
+  const plant = await Plant.findOne({ _id: req.params.id, userId: req.user._id });
+  if (!plant) res.status(404).json({ error: 'Растение не найдено' });
   return plant;
 }
 
 router.get('/:id', async (req, res) => {
   const plant = await findOwnPlant(req, res);
   if (!plant) return;
-  const [journal, reminders] = await Promise.all([
+  const [documents, reminders] = await Promise.all([
     JournalEntry.find({ plantId: plant._id }).sort({ createdAt: -1 }),
-    Reminder.find({ plantId: plant._id, active: true }),
+    Reminder.find({ plantId: plant._id }),
   ]);
-  res.json({ plant: plantView(plant), journal, reminders });
+  const journal = documents.map((entry) => entry.toObject());
+  // Existing plants get a virtual initial frame until the next accepted photo persists it.
+  if (plant.photoUrl && !journal.some((entry) => entry.source === 'baseline' || entry.photoUrl === plant.photoUrl)) {
+    journal.push({ ...baselineData(plant), _id: `baseline-${plant._id}`, updatedAt: plant.createdAt });
+    journal.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }
+  res.json({ plant: plantView(plant, reminders), journal, reminders: reminders.filter((r) => r.active), weeklyHistory: buildWeeklyHistory(plant, journal) });
 });
 
 router.patch('/:id', upload.single('photo'), async (req, res) => {
   const plant = await findOwnPlant(req, res);
   if (!plant) return;
-
   const { name, species, location, care } = req.body || {};
-  if (name) plant.name = name;
-  if (species !== undefined) plant.species = species;
+  if (name !== undefined) {
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) return res.status(400).json({ error: 'Укажите имя растения до 100 символов' });
+    plant.name = name.trim();
+  }
+  if (species !== undefined) plant.species = String(species).trim().slice(0, 200);
   if (location) plant.location = location === 'outdoor' ? 'outdoor' : 'indoor';
-  if (req.file) plant.photoUrl = await saveImage(req.file.buffer);
   if (care) {
     try {
-      const careObj = typeof care === 'string' ? JSON.parse(care) : care;
-      plant.care = { ...plant.care.toObject(), ...careObj };
-      await Reminder.updateOne(
-        { plantId: plant._id, type: 'watering' },
-        { intervalDays: plant.care.wateringIntervalDays }
-      );
-    } catch {
-      return res.status(400).json({ error: 'Некорректный формат care' });
+      const updates = validateCare(parseMaybe(care));
+      plant.careManualFields = [...new Set([...plant.careManualFields, ...changedCareFields(plant.care, updates)])];
+      plant.care = { ...plant.care.toObject(), ...updates };
     }
+    catch (error) { return res.status(400).json({ error: error.message }); }
+  }
+  if (req.file) {
+    await ensureBaseline(plant);
+    plant.photoUrl = await saveImage(req.file.buffer);
+    await JournalEntry.create({ userId: req.user._id, plantId: plant._id, photoUrl: plant.photoUrl, note: 'Обновлено фото растения', source: 'journal' });
   }
   await plant.save();
-  res.json({ plant: plantView(plant) });
+  await syncCareReminders(plant);
+  res.json({ plant: await ownPlantView(plant) });
 });
 
 router.delete('/:id', async (req, res) => {
   const plant = await findOwnPlant(req, res);
   if (!plant) return;
   await Promise.all([
-    plant.deleteOne(),
-    JournalEntry.deleteMany({ plantId: plant._id }),
-    Reminder.deleteMany({ plantId: plant._id }),
+    plant.deleteOne(), JournalEntry.deleteMany({ plantId: plant._id }), Reminder.deleteMany({ plantId: plant._id }),
+    Scan.updateMany({ plantId: plant._id, userId: req.user._id }, { $set: { plantId: null } }),
   ]);
   res.json({ ok: true });
 });
 
-router.post('/:id/water', async (req, res) => {
+for (const [action, timestamp, snoozed, notified] of [
+  ['water', 'lastWateredAt', 'wateringSnoozedUntil', 'lastWaterNotifiedAt'],
+  ['fertilize', 'lastFertilizedAt', 'fertilizingSnoozedUntil', 'lastFertilizeNotifiedAt'],
+]) {
+  router.post(`/:id/${action}`, async (req, res) => {
+    const plant = await findOwnPlant(req, res);
+    if (!plant) return;
+    plant[timestamp] = new Date();
+    plant[snoozed] = null;
+    plant[notified] = null;
+    plant[action === 'water' ? 'lastWaterDeliveredAt' : 'lastFertilizeDeliveredAt'] = null;
+    await plant.save();
+    await syncCareReminders(plant);
+    res.json({ plant: await ownPlantView(plant) });
+  });
+}
+
+router.post('/:id/care/snooze', async (req, res) => {
   const plant = await findOwnPlant(req, res);
   if (!plant) return;
-  plant.lastWateredAt = new Date();
+  const type = req.body?.type;
+  const days = Number(req.body?.days ?? 1);
+  if (!['watering', 'fertilizing'].includes(type) || !Number.isInteger(days) || days < 1 || days > 30) {
+    return res.status(400).json({ error: 'Укажите тип ухода и срок переноса от 1 до 30 дней' });
+  }
+  plant[type === 'watering' ? 'wateringSnoozedUntil' : 'fertilizingSnoozedUntil'] = new Date(Date.now() + days * DAY_MS);
   await plant.save();
-  await Reminder.updateOne(
-    { plantId: plant._id, type: 'watering' },
-    { nextDueAt: plant.wateringDueAt() }
-  );
-  res.json({ plant: plantView(plant) });
+  await syncCareReminders(plant);
+  res.json({ plant: await ownPlantView(plant) });
 });
 
-router.post('/:id/fertilize', async (req, res) => {
-  const plant = await findOwnPlant(req, res);
-  if (!plant) return;
-  plant.lastFertilizedAt = new Date();
-  await plant.save();
-  res.json({ plant: plantView(plant) });
-});
+async function recordObservation(req, res, plant, source) {
+  const note = String(req.body?.note || '').trim().slice(0, 5000);
+  const kind = ['before', 'after', 'progress'].includes(req.body?.kind) ? req.body.kind : 'progress';
+  const previousPhotoUrl = plant.photoUrl;
+  try {
+    const jpeg = await toGeminiJpeg(req.file.buffer);
+    const outcome = await scanQuota.run(req.user, () => analyzePlantImage(jpeg, analysisOptions(plant)), async (result) => {
+      const previousScore = plant.lastDiagnosis ? plant.healthScore : null;
+      await ensureBaseline(plant);
+      const photoUrl = await saveImage(req.file.buffer);
+      const entry = await JournalEntry.create({
+        userId: req.user._id, plantId: plant._id, photoUrl, note, kind, source,
+        ...journalSnapshot(result, previousScore),
+      });
+      applyPlantAnalysis(plant, result, { photoUrl, now: entry.createdAt });
+      await plant.save();
+      await syncCareReminders(plant);
+      return entry;
+    });
+    res.status(201).json({
+      entry: outcome.value, plant: await ownPlantView(plant), result: outcome.result, quota: outcome.quota,
+      previousPhotoUrl, growthAdvice: outcome.result.growthAdvice || [],
+    });
+  } catch (error) { return sendAnalysisError(res, error); }
+}
 
-// Плановый ИИ-чекап: перефотографируем растение, ИИ сравнивает с прошлым
-// состоянием, обновляет здоровье/диагноз/уход и пишет запись «до/после».
 router.post('/:id/checkup', upload.single('photo'), async (req, res) => {
   const plant = await findOwnPlant(req, res);
   if (!plant) return;
-  if (!req.file) return res.status(400).json({ error: 'Нужно фото для чекапа' });
-
-  const note = (req.body && req.body.note) || '';
-  const prevPhotoUrl = plant.photoUrl;
-  const prevScore = typeof plant.healthScore === 'number' ? plant.healthScore : null;
-
-  const [photoUrl, geminiJpeg] = await Promise.all([
-    saveImage(req.file.buffer),
-    toGeminiJpeg(req.file.buffer),
-  ]);
-
-  let result;
-  try {
-    result = await analyzePlantImage(geminiJpeg, {
-      previousDiagnosis: plant.lastDiagnosis || null,
-      plantContext: {
-        name: plant.name,
-        species: plant.species,
-        location: plant.location,
-        stage: plant.stage,
-        plantedAt: plant.plantedAt,
-      },
-      mode: plant.origin === 'grown' ? 'grow' : 'diagnose',
-    });
-  } catch (err) {
-    console.error('[checkup] gemini error:', err.message);
-    return res.status(502).json({ error: 'ИИ временно недоступен, попробуйте ещё раз' });
-  }
-
-  const now = new Date();
-  const entryData = {
-    userId: req.user._id,
-    plantId: plant._id,
-    photoUrl,
-    note,
-    kind: 'progress',
-  };
-
-  if (result.isPlant) {
-    const status = result.isHealthy
-      ? 'thriving'
-      : result.healthScore >= 55 ? 'needs_attention' : 'sick';
-    entryData.healthScore = result.healthScore;
-    entryData.healthStatus = status;
-    entryData.analysis = result.progressNote || result.diagnosis?.description || '';
-    if (prevScore != null) {
-      entryData.trend =
-        result.healthScore > prevScore + 2 ? 'up'
-          : result.healthScore < prevScore - 2 ? 'down'
-            : 'same';
-    }
-
-    plant.healthScore = result.healthScore;
-    plant.healthStatus = status;
-    plant.lastDiagnosis = {
-      isHealthy: result.isHealthy,
-      title: result.diagnosis?.title || '',
-      description: result.diagnosis?.description || '',
-      confidence: Number(result.diagnosis?.confidence) || 0,
-      treatmentPlan: Array.isArray(result.treatmentPlan) ? result.treatmentPlan : [],
-      scannedAt: now,
-    };
-    if (result.species) plant.species = result.species;
-    const validStages = ['seed', 'sprout', 'seedling', 'growing', 'mature', 'flowering'];
-    if (validStages.includes(result.growthStage)) plant.stage = result.growthStage;
-    if (result.careAdvice) {
-      const c = result.careAdvice;
-      if (c.wateringIntervalDays) plant.care.wateringIntervalDays = c.wateringIntervalDays;
-      if (c.waterAmountMl) plant.care.waterAmountMl = c.waterAmountMl;
-      if (c.light) plant.care.light = c.light;
-      if (c.fertilizerIntervalDays) plant.care.fertilizerIntervalDays = c.fertilizerIntervalDays;
-      if (c.temperature) plant.care.temperature = c.temperature;
-    }
-    // Свежая фотка становится главной.
-    plant.photoUrl = photoUrl;
-  }
-
-  // Планируем следующий чекап.
-  const nextDays = result.nextCheckupDays || plant.care.checkupIntervalDays || 14;
-  plant.care.checkupIntervalDays = nextDays;
-  plant.lastCheckupAt = now;
-  plant.nextCheckupAt = new Date(now.getTime() + nextDays * 86400000);
-  plant.lastCheckupNotifiedAt = now;
-  await plant.save();
-
-  const entry = await JournalEntry.create(entryData);
-
-  res.status(201).json({
-    entry,
-    plant: plantView(plant),
-    result,
-    previousPhotoUrl: prevPhotoUrl,
-    growthAdvice: Array.isArray(result.growthAdvice) ? result.growthAdvice : [],
-  });
+  if (!req.file) return res.status(400).json({ error: 'Нужно фото для проверки' });
+  return recordObservation(req, res, plant, 'checkup');
 });
 
-// Журнал роста «до/после».
 router.post('/:id/journal', upload.single('photo'), async (req, res) => {
   const plant = await findOwnPlant(req, res);
   if (!plant) return;
-  const { note, kind } = req.body || {};
-  let photoUrl = null;
-  if (req.file) photoUrl = await saveImage(req.file.buffer);
-  if (!photoUrl && !note) return res.status(400).json({ error: 'Нужно фото или заметка' });
-
-  const entryData = {
-    userId: req.user._id,
-    plantId: plant._id,
-    photoUrl,
-    note: note || '',
-    kind: ['before', 'after', 'progress'].includes(kind) ? kind : 'progress',
-  };
-
-  // Если есть фото — ИИ оценивает состояние и обновляет health score растения.
-  if (req.file) {
-    try {
-      const prevScore = plant.healthScore;
-      const geminiJpeg = await toGeminiJpeg(req.file.buffer);
-      const result = await analyzePlantImage(geminiJpeg, {
-        previousDiagnosis: plant.lastDiagnosis || null,
-      });
-      if (result.isPlant) {
-        entryData.healthScore = result.healthScore;
-        entryData.healthStatus = result.isHealthy
-          ? 'thriving'
-          : result.healthScore >= 55
-            ? 'needs_attention'
-            : 'sick';
-        entryData.analysis = result.progressNote || result.diagnosis?.description || '';
-        if (typeof prevScore === 'number') {
-          entryData.trend =
-            result.healthScore > prevScore + 2
-              ? 'up'
-              : result.healthScore < prevScore - 2
-                ? 'down'
-                : 'same';
-        }
-        plant.healthScore = result.healthScore;
-        plant.healthStatus = entryData.healthStatus;
-        plant.lastDiagnosis = {
-          isHealthy: result.isHealthy,
-          title: result.diagnosis.title,
-          description: result.diagnosis.description,
-          confidence: result.diagnosis.confidence,
-          treatmentPlan: result.treatmentPlan,
-          scannedAt: new Date(),
-        };
-        if (!plant.species && result.species) plant.species = result.species;
-        await plant.save();
-      }
-    } catch (err) {
-      console.error('[journal] gemini error:', err.message);
-      // Не роняем добавление записи, просто без ИИ-оценки.
-    }
-  }
-
-  const entry = await JournalEntry.create(entryData);
-  res.status(201).json({ entry, plant: plantView(plant) });
+  if (req.file && req.body?.analyze !== false && req.body?.analyze !== 'false') return recordObservation(req, res, plant, 'journal');
+  const note = String(req.body?.note || '').trim().slice(0, 5000);
+  if (!note && !req.file) return res.status(400).json({ error: 'Нужно фото или заметка' });
+  const kind = ['before', 'after', 'progress'].includes(req.body?.kind) ? req.body.kind : 'progress';
+  const photoUrl = req.file ? await saveImage(req.file.buffer) : null;
+  const entry = await JournalEntry.create({ userId: req.user._id, plantId: plant._id, photoUrl, note, kind, source: 'journal' });
+  res.status(201).json({ entry, plant: await ownPlantView(plant) });
 });
 
 router.delete('/:id/journal/:entryId', async (req, res) => {
   const plant = await findOwnPlant(req, res);
   if (!plant) return;
+  if (!mongoose.isValidObjectId(req.params.entryId)) return res.status(400).json({ error: 'Некорректная запись' });
   await JournalEntry.deleteOne({ _id: req.params.entryId, plantId: plant._id });
   res.json({ ok: true });
 });
 
-// Напоминания растения.
 router.get('/:id/reminders', async (req, res) => {
   const plant = await findOwnPlant(req, res);
   if (!plant) return;
-  const reminders = await Reminder.find({ plantId: plant._id });
-  res.json({ reminders });
+  res.json({ reminders: await Reminder.find({ plantId: plant._id }) });
 });
 
 router.post('/:id/reminders', async (req, res) => {
   const plant = await findOwnPlant(req, res);
   if (!plant) return;
-  const { type, intervalDays } = req.body || {};
-  if (!['watering', 'fertilizing'].includes(type) || !intervalDays) {
-    return res.status(400).json({ error: 'Нужны type (watering|fertilizing) и intervalDays' });
+  const type = req.body?.type;
+  const intervalDays = type === 'checkup' ? CHECKUP_DAYS : Number(req.body?.intervalDays);
+  if (!['watering', 'fertilizing', 'checkup'].includes(type) || !Number.isInteger(intervalDays) || intervalDays < 1 || intervalDays > 365) {
+    return res.status(400).json({ error: 'Укажите тип напоминания и интервал от 1 до 365 дней' });
   }
-  const reminder = await Reminder.findOneAndUpdate(
-    { plantId: plant._id, type },
-    {
-      userId: req.user._id,
-      plantId: plant._id,
-      type,
-      intervalDays,
-      nextDueAt: new Date(Date.now() + intervalDays * 86400000),
-      active: true,
-    },
-    { upsert: true, new: true }
-  );
-  res.json({ reminder });
+  const careField = type === 'watering' ? 'wateringIntervalDays' : type === 'fertilizing' ? 'fertilizerIntervalDays' : null;
+  if (careField) {
+    if (plant.care[careField] !== intervalDays) plant.careManualFields = [...new Set([...plant.careManualFields, careField])];
+    plant.care[careField] = intervalDays;
+  }
+  plant.care.checkupIntervalDays = CHECKUP_DAYS;
+  await plant.save();
+  await syncCareReminders(plant);
+  const reminder = await Reminder.findOneAndUpdate({ plantId: plant._id, type }, { $set: { active: true } }, { new: true });
+  res.json({ reminder, plant: await ownPlantView(plant) });
 });
 
 router.delete('/:id/reminders/:reminderId', async (req, res) => {
   const plant = await findOwnPlant(req, res);
   if (!plant) return;
-  await Reminder.updateOne({ _id: req.params.reminderId, plantId: plant._id }, { active: false });
-  res.json({ ok: true });
+  if (!mongoose.isValidObjectId(req.params.reminderId)) return res.status(400).json({ error: 'Некорректное напоминание' });
+  await Reminder.updateOne({ _id: req.params.reminderId, plantId: plant._id }, { $set: { active: false } });
+  res.json({ ok: true, plant: await ownPlantView(plant) });
 });
 
 export default router;

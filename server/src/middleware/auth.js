@@ -7,16 +7,27 @@ export async function requireAuth(req, res, next) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Требуется авторизация' });
 
+  let payload;
   try {
-    const payload = jwt.verify(token, config.jwtSecret);
-    const user = await User.findById(payload.sub);
-    if (!user) return res.status(401).json({ error: 'Пользователь не найден' });
-    if (user.isBlocked) return res.status(403).json({ error: 'Аккаунт заблокирован' });
-    req.user = user;
-    next();
+    payload = jwt.verify(token, config.jwtSecret);
+    if (!payload || typeof payload.sub !== 'string' || !/^[a-fA-F0-9]{24}$/.test(payload.sub)) {
+      return res.status(401).json({ error: 'Недействительный токен' });
+    }
   } catch {
     return res.status(401).json({ error: 'Недействительный токен' });
   }
+  let user;
+  try {
+    user = await User.findById(payload.sub);
+  } catch (error) {
+    // A temporary database failure is not an expired session. Preserve the token
+    // and let the server error handler return a retryable service error.
+    return next(error);
+  }
+  if (!user) return res.status(401).json({ error: 'Пользователь не найден' });
+  if (user.isBlocked) return res.status(403).json({ error: 'Аккаунт заблокирован' });
+  req.user = user;
+  next();
 }
 
 export function requireAdmin(req, res, next) {

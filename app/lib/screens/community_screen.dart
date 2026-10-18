@@ -19,35 +19,44 @@ class CommunityScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final feed = ref.watch(feedProvider);
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Комьюнити')),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
+        backgroundColor: scheme.primary,
+        foregroundColor: scheme.onPrimary,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         onPressed: () => _createPost(context, ref),
         child: const Icon(Icons.edit_outlined),
       ),
       body: RefreshIndicator(
-        color: AppColors.primary,
+        color: scheme.primary,
         onRefresh: () => ref.read(feedProvider.notifier).reload(),
         child: feed.when(
-          loading: () => const Center(
-              child: CircularProgressIndicator(color: AppColors.primary)),
+          loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
             children: [
               Padding(
                 padding: const EdgeInsets.all(32),
                 child: Text(apiErrorMessage(e), textAlign: TextAlign.center),
               ),
+              Center(
+                child: TextButton(
+                  onPressed: () => ref.invalidate(feedProvider),
+                  child: const Text('Повторить'),
+                ),
+              ),
             ],
           ),
           data: (posts) => posts.isEmpty
               ? ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   children: const [_EmptyFeed()],
                 )
               : ListView.separated(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
                   itemCount: posts.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 16),
@@ -59,82 +68,161 @@ class CommunityScreen extends ConsumerWidget {
   }
 
   Future<void> _createPost(BuildContext context, WidgetRef ref) async {
-    final textCtrl = TextEditingController();
-    XFile? photo;
-
-    final posted = await showModalBottomSheet<bool>(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
-          padding: EdgeInsets.fromLTRB(
-              24, 24, 24, MediaQuery.of(sheetContext).viewInsets.bottom + 28),
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (_) => const _CreatePostSheet(),
+    );
+  }
+}
+
+class _CreatePostSheet extends ConsumerStatefulWidget {
+  const _CreatePostSheet();
+
+  @override
+  ConsumerState<_CreatePostSheet> createState() => _CreatePostSheetState();
+}
+
+class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
+  final _text = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  XFile? _photo;
+  bool _sending = false;
+  bool _picking = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickPhoto() async {
+    if (_picking || _sending) return;
+    setState(() => _picking = true);
+    try {
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1600,
+        imageQuality: 88,
+      );
+      if (mounted && image != null) setState(() => _photo = image);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Не удалось открыть фото. Попробуйте ещё раз.');
+      }
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  Future<void> _publish() async {
+    if (_sending || !_formKey.currentState!.validate()) return;
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
+    try {
+      await ref
+          .read(feedProvider.notifier)
+          .createPost(
+            text: _text.text.trim(),
+            image: _photo == null
+                ? null
+                : await MultipartFile.fromFile(
+                    _photo!.path,
+                    filename: 'post.jpg',
+                  ),
+          );
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) setState(() => _error = apiErrorMessage(error));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !_sending,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+          24,
+          12,
+          24,
+          MediaQuery.viewInsetsOf(context).bottom + 28,
+        ),
+        child: Form(
+          key: _formKey,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Новый пост',
-                  style: Theme.of(context).textTheme.headlineMedium),
+              Text(
+                'Новый пост',
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
               const SizedBox(height: 16),
-              if (photo != null)
+              if (_photo != null) ...[
                 ClipRRect(
                   borderRadius: BorderRadius.circular(16),
-                  child: Image.file(File(photo!.path),
-                      height: 160, width: double.infinity, fit: BoxFit.cover),
-                ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: textCtrl,
-                maxLines: 4,
-                decoration: const InputDecoration(
-                    hintText: 'Расскажите о своём саде…'),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(0, 46),
-                        padding: const EdgeInsets.symmetric(horizontal: 16)),
-                    onPressed: () async {
-                      final picked = await ImagePicker().pickImage(
-                          source: ImageSource.gallery,
-                          maxWidth: 1600,
-                          imageQuality: 88);
-                      if (picked != null) setSheetState(() => photo = picked);
-                    },
-                    icon: const Icon(Icons.photo_outlined, size: 18),
-                    label: const Text('Фото'),
+                  child: Image.file(
+                    File(_photo!.path),
+                    height: 160,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                          minimumSize: const Size(0, 46)),
-                      onPressed: () => Navigator.pop(sheetContext, true),
-                      child: const Text('Опубликовать'),
+                ),
+                TextButton.icon(
+                  onPressed: _sending
+                      ? null
+                      : () => setState(() => _photo = null),
+                  icon: const Icon(Icons.close),
+                  label: const Text('Убрать фото'),
+                ),
+              ],
+              TextFormField(
+                controller: _text,
+                enabled: !_sending,
+                minLines: 3,
+                maxLines: 6,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  hintText: 'Расскажите о своём саде…',
+                ),
+                validator: (value) => value == null || value.trim().isEmpty
+                    ? 'Добавьте текст к публикации'
+                    : null,
+              ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
                     ),
                   ),
-                ],
+                ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _sending || _picking ? null : _pickPhoto,
+                icon: const Icon(Icons.photo_outlined),
+                label: const Text('Добавить фото'),
+              ),
+              const SizedBox(height: 10),
+              FilledButton(
+                onPressed: _sending || _picking ? null : _publish,
+                child: Text(_sending ? 'Публикуем…' : 'Опубликовать'),
               ),
             ],
           ),
         ),
       ),
     );
-
-    if (posted == true && textCtrl.text.trim().isNotEmpty) {
-      await ref.read(feedProvider.notifier).createPost(
-            text: textCtrl.text.trim(),
-            image: photo != null
-                ? await MultipartFile.fromFile(photo!.path, filename: 'post.jpg')
-                : null,
-          );
-    }
   }
 }
 
@@ -165,26 +253,32 @@ class _PostCard extends ConsumerWidget {
                             ? post.authorName[0].toUpperCase()
                             : '?',
                         style: const TextStyle(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w700),
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
                       )
                     : null,
               ),
               const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(post.authorName, style: theme.textTheme.titleMedium),
-                  Text(
-                    DateFormat('d MMMM, HH:mm', 'ru').format(post.createdAt),
-                    style: theme.textTheme.labelSmall,
-                  ),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(post.authorName, style: theme.textTheme.titleMedium),
+                    Text(
+                      DateFormat('d MMMM, HH:mm', 'ru').format(post.createdAt),
+                      style: theme.textTheme.labelSmall,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          Text(post.text, style: theme.textTheme.bodyLarge?.copyWith(fontSize: 15.5)),
+          Text(
+            post.text,
+            style: theme.textTheme.bodyLarge?.copyWith(fontSize: 15.5),
+          ),
           if (post.imageUrl != null) ...[
             const SizedBox(height: 12),
             PlantImage(url: post.imageUrl, height: 220, width: double.infinity),
@@ -195,7 +289,9 @@ class _PostCard extends ConsumerWidget {
               _ActionChip(
                 icon: post.likedByMe ? Icons.favorite : Icons.favorite_border,
                 label: '${post.likesCount}',
-                color: post.likedByMe ? AppColors.terracotta : AppColors.outline,
+                color: post.likedByMe
+                    ? theme.colorScheme.tertiary
+                    : theme.colorScheme.onSurfaceVariant,
                 onTap: () =>
                     ref.read(feedProvider.notifier).toggleLike(post.id),
               ),
@@ -203,7 +299,7 @@ class _PostCard extends ConsumerWidget {
               _ActionChip(
                 icon: Icons.mode_comment_outlined,
                 label: '${post.commentsCount}',
-                color: AppColors.outline,
+                color: theme.colorScheme.onSurfaceVariant,
                 onTap: () => _openComments(context, ref),
               ),
             ],
@@ -217,7 +313,8 @@ class _PostCard extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.surface,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
@@ -250,9 +347,14 @@ class _ActionChip extends StatelessWidget {
           children: [
             Icon(icon, size: 19, color: color),
             const SizedBox(width: 5),
-            Text(label,
-                style: TextStyle(
-                    fontSize: 13.5, fontWeight: FontWeight.w600, color: color)),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
           ],
         ),
       ),
@@ -285,15 +387,19 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
     setState(() => _sending = true);
     try {
       final api = ref.read(apiProvider);
-      await api.dio
-          .post('/api/community/posts/${widget.postId}/comments', data: {'text': text});
+      await api.dio.post(
+        '/api/community/posts/${widget.postId}/comments',
+        data: {'text': text},
+      );
+      if (!mounted) return;
       _ctrl.clear();
       ref.invalidate(commentsProvider(widget.postId));
       await ref.read(feedProvider.notifier).reload();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
       }
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -306,10 +412,14 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
     final theme = Theme.of(context);
 
     return Padding(
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.62,
+        height:
+            (MediaQuery.sizeOf(context).height -
+                MediaQuery.viewInsetsOf(context).bottom) *
+            0.72,
         child: Column(
           children: [
             Padding(
@@ -318,17 +428,37 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
             ),
             Expanded(
               child: comments.when(
-                loading: () => const Center(
-                    child: CircularProgressIndicator(color: AppColors.primary)),
-                error: (e, _) => Center(child: Text(apiErrorMessage(e))),
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(
+                  child: SingleChildScrollView(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(apiErrorMessage(e), textAlign: TextAlign.center),
+                          TextButton(
+                            onPressed: () =>
+                                ref.invalidate(commentsProvider(widget.postId)),
+                            child: const Text('Повторить'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
                 data: (items) => items.isEmpty
                     ? Center(
-                        child: Text('Будьте первым, кто ответит 🌱',
-                            style: theme.textTheme.bodyMedium),
+                        child: Text(
+                          'Будьте первым, кто ответит 🌱',
+                          style: theme.textTheme.bodyMedium,
+                        ),
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 8),
+                          horizontal: 20,
+                          vertical: 8,
+                        ),
                         itemCount: items.length,
                         itemBuilder: (context, i) {
                           final c = items[i];
@@ -345,9 +475,10 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                                         ? c.authorName[0].toUpperCase()
                                         : '?',
                                     style: const TextStyle(
-                                        fontSize: 13,
-                                        color: AppColors.primary,
-                                        fontWeight: FontWeight.w700),
+                                      fontSize: 13,
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 10),
@@ -356,11 +487,15 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text(c.authorName,
-                                          style: theme.textTheme.titleMedium
-                                              ?.copyWith(fontSize: 14.5)),
-                                      Text(c.text,
-                                          style: theme.textTheme.bodyMedium),
+                                      Text(
+                                        c.authorName,
+                                        style: theme.textTheme.titleMedium
+                                            ?.copyWith(fontSize: 14.5),
+                                      ),
+                                      Text(
+                                        c.text,
+                                        style: theme.textTheme.bodyMedium,
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -379,19 +514,30 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                     Expanded(
                       child: TextField(
                         controller: _ctrl,
-                        decoration:
-                            const InputDecoration(hintText: 'Ваш комментарий…'),
+                        enabled: !_sending,
+                        minLines: 1,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          hintText: 'Ваш комментарий…',
+                        ),
                         onSubmitted: (_) => _send(),
                       ),
                     ),
                     const SizedBox(width: 10),
-                    IconButton.filled(
-                      style: IconButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        minimumSize: const Size(50, 50),
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _ctrl,
+                      builder: (context, value, _) => IconButton.filled(
+                        tooltip: 'Отправить комментарий',
+                        style: IconButton.styleFrom(
+                          backgroundColor: theme.colorScheme.primary,
+                          foregroundColor: theme.colorScheme.onPrimary,
+                          minimumSize: const Size(50, 50),
+                        ),
+                        onPressed: _sending || value.text.trim().isEmpty
+                            ? null
+                            : _send,
+                        icon: const Icon(Icons.send, size: 20),
                       ),
-                      onPressed: _sending ? null : _send,
-                      icon: const Icon(Icons.send, size: 20, color: Colors.white),
                     ),
                   ],
                 ),

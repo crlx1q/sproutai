@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../core/api.dart';
 import '../core/theme.dart';
 import '../models/models.dart';
+import '../models/weekly_history.dart';
 import '../providers/auth_provider.dart';
 import '../providers/plants_provider.dart';
 import '../widgets/common.dart';
@@ -41,15 +42,26 @@ class HomeScreen extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Привет, $userName! 👋',
-                          style: theme.textTheme.displayLarge?.copyWith(fontSize: 32)),
+                      Text(
+                        'Привет, $userName! 👋',
+                        style: theme.textTheme.displayLarge?.copyWith(
+                          fontSize: 32,
+                        ),
+                      ),
                       const SizedBox(height: 6),
                       Text(
                         _subtitle(plantsAsync.value),
                         style: theme.textTheme.bodyMedium,
                       ),
                       const SizedBox(height: 24),
-                      _TasksCard(plants: plantsAsync.value ?? const []),
+                      if (plantsAsync.hasValue)
+                        _TasksCard(plants: plantsAsync.value ?? const [])
+                      else
+                        Text(
+                          plantsAsync.isLoading
+                              ? 'Загружаем задачи…'
+                              : 'Не удалось обновить задачи. Потяните вниз для повтора.',
+                        ),
                       const SizedBox(height: 30),
                       SectionHeader(
                         title: 'Мой сад',
@@ -66,14 +78,20 @@ class HomeScreen extends ConsumerWidget {
                 loading: () => SliverFillRemaining(
                   hasScrollBody: false,
                   child: Center(
-                      child: CircularProgressIndicator(color: theme.colorScheme.primary)),
+                    child: CircularProgressIndicator(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
                 ),
                 error: (e, _) => SliverFillRemaining(
                   hasScrollBody: false,
                   child: Center(
                     child: Padding(
                       padding: const EdgeInsets.all(32),
-                      child: Text(apiErrorMessage(e), textAlign: TextAlign.center),
+                      child: Text(
+                        apiErrorMessage(e),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                   ),
                 ),
@@ -83,12 +101,23 @@ class HomeScreen extends ConsumerWidget {
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
                         sliver: SliverGrid(
                           gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisSpacing: 16,
-                            crossAxisSpacing: 16,
-                            childAspectRatio: 0.72,
-                          ),
+                              SliverGridDelegateWithMaxCrossAxisExtent(
+                                maxCrossAxisExtent:
+                                    MediaQuery.textScalerOf(context).scale(1) >
+                                        1.5
+                                    ? 600
+                                    : 260,
+                                mainAxisSpacing: 16,
+                                crossAxisSpacing: 16,
+                                mainAxisExtent:
+                                    318 +
+                                    (MediaQuery.textScalerOf(
+                                                  context,
+                                                ).scale(14) -
+                                                14)
+                                            .clamp(0, 28) *
+                                        5,
+                              ),
                           delegate: SliverChildBuilderDelegate(
                             (context, i) => _PlantCard(plant: plants[i]),
                             childCount: plants.length,
@@ -107,78 +136,135 @@ class HomeScreen extends ConsumerWidget {
     if (plants == null || plants.isEmpty) {
       return 'Добавьте первое растение — начнём заботиться.';
     }
-    final thirsty = plants.where((p) => p.needsWater).length;
-    return thirsty == 0
-        ? 'Твой сад выглядит отлично сегодня.'
-        : 'Пара зелёных друзей ждёт внимания.';
+    final pending = plants.any(
+      (p) => p.needsWater || p.needsFertilizer || p.needsCheckup,
+    );
+    return pending
+        ? 'Есть задачи по уходу и новые фото.'
+        : 'Сегодня задач по расписанию нет.';
   }
 }
 
-class _TasksCard extends ConsumerWidget {
+class _TasksCard extends ConsumerStatefulWidget {
   const _TasksCard({required this.plants});
 
   final List<Plant> plants;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final thirsty = plants.where((p) => p.needsWater).toList();
+  ConsumerState<_TasksCard> createState() => _TasksCardState();
+}
+
+class _TasksCardState extends ConsumerState<_TasksCard> {
+  bool _watering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final thirsty = widget.plants.where((p) => p.needsWater).toList();
+    final pending = widget.plants
+        .where((p) => p.needsWater || p.needsFertilizer || p.needsCheckup)
+        .toList();
     final theme = Theme.of(context);
 
     return SoftCard(
       color: theme.colorScheme.secondaryContainer,
       padding: const EdgeInsets.all(20),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface, shape: BoxShape.circle),
-            child: Icon(
-              thirsty.isEmpty ? Icons.check : Icons.water_drop_outlined,
-              color: theme.colorScheme.secondary,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'ЗАДАЧИ НА СЕГОДНЯ',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    letterSpacing: 1.1,
-                    color: theme.colorScheme.onSecondaryContainer,
-                    fontWeight: FontWeight.w700,
-                  ),
+          Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  thirsty.isEmpty
-                      ? 'Все политы!'
-                      : '${thirsty.length} ${_plural(thirsty.length)}',
-                  style: theme.textTheme.titleLarge?.copyWith(fontSize: 21),
+                child: Icon(
+                  thirsty.isEmpty ? Icons.check : Icons.water_drop_outlined,
+                  color: theme.colorScheme.secondary,
                 ),
-                if (thirsty.isNotEmpty)
-                  Text('нуждаются в поливе', style: theme.textTheme.bodyMedium),
-              ],
-            ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ЗАДАЧИ НА СЕГОДНЯ',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        letterSpacing: 1.1,
+                        color: theme.colorScheme.onSecondaryContainer,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      pending.isEmpty
+                          ? 'Задач пока нет'
+                          : '${pending.length} ${_plural(pending.length)} ждут внимания',
+                      style: theme.textTheme.titleLarge?.copyWith(fontSize: 21),
+                    ),
+                    if (pending.isNotEmpty)
+                      Text(
+                        'Полив, подкормка и контрольное фото',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
+          for (final plant in pending)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                plant.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                [
+                  if (plant.needsWater) 'Полить',
+                  if (plant.needsFertilizer) 'Подкормить',
+                  if (plant.needsCheckup) 'Обновить фото',
+                ].join(' · '),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push('/plant/${plant.id}'),
+            ),
           if (thirsty.isNotEmpty)
             FilledButton(
               style: FilledButton.styleFrom(
                 minimumSize: const Size(0, 46),
                 padding: const EdgeInsets.symmetric(horizontal: 18),
               ),
-              onPressed: () async {
-                final n = await ref.read(plantsProvider.notifier).waterAll();
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Полито растений: $n 💧')),
-                  );
-                }
-              },
-              child: const Text('Полить все'),
+              onPressed: _watering
+                  ? null
+                  : () async {
+                      setState(() => _watering = true);
+                      try {
+                        final n = await ref
+                            .read(plantsProvider.notifier)
+                            .waterAll();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Полито растений: $n 💧')),
+                          );
+                        }
+                      } catch (error) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(apiErrorMessage(error))),
+                          );
+                        }
+                      } finally {
+                        if (mounted) setState(() => _watering = false);
+                      }
+                    },
+              child: Text(
+                _watering ? 'Отмечаем…' : 'Я полил(а) все: ${thirsty.length}',
+              ),
             ),
         ],
       ),
@@ -212,12 +298,20 @@ class _PlantCard extends StatelessWidget {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: PlantImage(url: plant.photoUrl, radius: 16, width: double.infinity),
+                  child: PlantImage(
+                    url: plant.photoUrl,
+                    radius: 16,
+                    width: double.infinity,
+                  ),
                 ),
                 Positioned(
                   top: 8,
                   left: 8,
-                  child: StatusChip(status: plant.needsWater ? 'thirsty' : plant.healthStatus),
+                  right: 8,
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: StatusChip(status: plant.healthStatus),
+                  ),
                 ),
               ],
             ),
@@ -226,12 +320,25 @@ class _PlantCard extends StatelessWidget {
           Text(
             plant.name,
             style: theme.textTheme.titleMedium,
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
           if (plant.species.isNotEmpty)
             Text(
               plant.species,
+              style: theme.textTheme.labelSmall,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          Text(
+            plant.location == 'outdoor' ? 'На улице' : 'В помещении',
+            style: theme.textTheme.labelSmall,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (plant.healthTrend != null)
+            Text(
+              healthTrendLabel(plant.healthTrend),
               style: theme.textTheme.labelSmall,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -251,7 +358,9 @@ class _PlantCard extends StatelessWidget {
                 Icon(
                   Icons.water_drop_outlined,
                   size: 13,
-                  color: plant.needsWater ? AppColors.terracotta : AppColors.outline,
+                  color: plant.needsWater
+                      ? AppColors.terracotta
+                      : AppColors.outline,
                 ),
                 const SizedBox(width: 4),
                 Flexible(
@@ -260,7 +369,9 @@ class _PlantCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
-                      color: plant.needsWater ? AppColors.terracotta : AppColors.onSurfaceVariant,
+                      color: plant.needsWater
+                          ? AppColors.terracotta
+                          : AppColors.onSurfaceVariant,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -297,9 +408,14 @@ class _EmptyJungle extends StatelessWidget {
             width: 120,
             height: 120,
             decoration: const BoxDecoration(
-              color: AppColors.mintSoft, shape: BoxShape.circle),
-            child: const Icon(Icons.local_florist_outlined,
-                size: 54, color: AppColors.secondary),
+              color: AppColors.mintSoft,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.local_florist_outlined,
+              size: 54,
+              color: AppColors.secondary,
+            ),
           ),
           const SizedBox(height: 24),
           Text('В саду пока пусто', style: theme.textTheme.headlineMedium),

@@ -12,6 +12,8 @@ export const config = {
   freeScansPerMonth: parseInt(process.env.FREE_SCANS_PER_MONTH || '5', 10),
   firebaseServiceAccountPath:
     process.env.FIREBASE_SERVICE_ACCOUNT || './firebase-service-account.json',
+  firebaseProjectId: process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT,
+  firebaseUseApplicationDefault: process.env.FIREBASE_USE_APPLICATION_DEFAULT === 'true',
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME,
     apiKey: process.env.CLOUDINARY_API_KEY,

@@ -1,7 +1,12 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { config } from '../config.js';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { reconcileHealth } from '../utils/healthAnalysis.js';
+export { reconcileHealth } from '../utils/healthAnalysis.js';
 
-const ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
+let ai;
 
 export const GROWTH_STAGES = ['seed', 'sprout', 'seedling', 'growing', 'mature', 'flowering'];
 
@@ -55,7 +60,7 @@ const responseSchema = {
     },
     nextCheckupDays: {
       type: Type.INTEGER,
-      description: 'Через сколько дней сделать новое контрольное фото. Проблемные — 3-7, здоровые — 14-30',
+      description: 'Следующее плановое контрольное фото через 7 дней',
     },
     progressNote: {
       type: Type.STRING,
@@ -73,8 +78,8 @@ const SYSTEM_PROMPT = `Ты — опытный ботаник и фитопат�
 
 КРИТИЧЕСКИ ВАЖНО про оценку здоровья — НЕ ЗАВЫШАЙ баллы. Большинство фото
 получают ~90 по ошибке. Используй рубрику строго и честно:
-- 90-100 (severity=none): растение идеально, никаких проблем.
-- 70-89 (severity=mild): лёгкие проблемы (1-2 жёлтых листа, лёгкий стресс, суховато).
+- 85-100 (severity=none): растение здорово, видимых проблем нет.
+- 70-84 (severity=mild): лёгкие проблемы (1-2 жёлтых листа, лёгкий стресс, суховато).
 - 50-69 (severity=moderate): заметная проблема, нужно вмешательство
   (дефицит, начало заражения вредителем, коркование почвы, стресс черенка/пересадки).
 - 30-49 (severity=severe): серьёзная болезнь, поражена часть растения.
@@ -82,57 +87,46 @@ const SYSTEM_PROMPT = `Ты — опытный ботаник и фитопат�
 Если видишь ЛЮБУЮ проблему — балл ОБЯЗАН быть ниже 85, а isHealthy=false.
 Балл и severity должны соответствовать друг другу по рубрике.
 
-Поле nextCheckupDays: чем хуже состояние, тем скорее контроль
-(critical/severe: 3-5 дней, moderate: 5-7, mild: 10-14, none: 14-30).
+Поле nextCheckupDays всегда 7: приложение ведёт еженедельную историю.
+Если состояние опасное, отдельно напиши срочные действия в treatmentPlan.
+
+Динамика и текущее здоровье — разные вещи. «Стало лучше» не означает,
+что растение уже здорово: перечисли оставшиеся видимые симптомы.
+Если старые симптомы исчезли, isHealthy=true, severity=none и старый план
+лечения больше не нужен. Не сохраняй прошлую проблему автоматически.
+Не выводи диагноз пересадки только из прошлой записи: нужны текущие признаки.
+Не утверждай, что растение выросло или проблема уменьшилась, если это
+нельзя увидеть на сопоставимых фото; укажи ограничения сравнения.
 
 Если на фото нет растения — верни isPlant=false и пустые/нулевые значения.`;
 
-const SEVERITY_BANDS = {
-  none: [85, 100],
-  mild: [70, 84],
-  moderate: [50, 69],
-  severe: [30, 49],
-  critical: [5, 29],
-};
-
-/**
- * Приводим ответ модели к согласованному виду: балл здоровья не может
- * противоречить найденной проблеме. Это лечит «оптимизм» модели,
- * из-за которого раньше почти все растения получали ~90%.
- */
-export function reconcileHealth(result) {
-  if (!result || result.isPlant === false) return result;
-
-  let severity = String(result.severity || '').toLowerCase();
-  let score = Number(result.healthScore);
-  if (!Number.isFinite(score)) score = 80;
-  score = Math.max(0, Math.min(100, Math.round(score)));
-
-  // Если severity не распознан — выводим из балла.
-  if (!SEVERITY_BANDS[severity]) {
-    severity =
-      score >= 85 ? 'none'
-        : score >= 70 ? 'mild'
-          : score >= 50 ? 'moderate'
-            : score >= 30 ? 'severe'
-              : 'critical';
+async function previousPhotoBytes(photoUrl) {
+  if (typeof photoUrl !== 'string') return null;
+  try {
+    if (/^\/uploads\/[a-zA-Z0-9-]+\.jpg$/.test(photoUrl)) {
+      const uploadsDir = fileURLToPath(new URL('../../uploads/', import.meta.url));
+      const file = path.join(uploadsDir, path.basename(photoUrl));
+      const info = await fs.stat(file);
+      return info.size <= 6 * 1024 * 1024 ? await fs.readFile(file) : null;
+    }
+    const url = new URL(photoUrl);
+    // Only our configured image store is fetchable; plant.photoUrl is client-controlled.
+    if (url.protocol !== 'https:' || url.hostname !== 'res.cloudinary.com' ||
+      url.pathname.split('/')[1] !== config.cloudinary.cloudName || url.username || url.password) return null;
+    const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(6000) });
+    if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) return null;
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of response.body) {
+      size += chunk.length;
+      if (size > 6 * 1024 * 1024) throw new Error('Image too large');
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  } catch {
+    // An unavailable old image must not prevent taking a new photo.
+    return null;
   }
-
-  // Если модель нашла проблему, но поставила завышенный балл —
-  // опускаем балл в диапазон, соответствующий severity.
-  const [lo, hi] = SEVERITY_BANDS[severity];
-  if (score < lo) score = lo;
-  if (score > hi) score = hi;
-
-  const isHealthy = severity === 'none';
-
-  let checkup = Number(result.nextCheckupDays);
-  if (!Number.isFinite(checkup) || checkup < 1) {
-    checkup = isHealthy ? 21 : severity === 'mild' ? 12 : severity === 'moderate' ? 6 : 4;
-  }
-  checkup = Math.max(2, Math.min(45, Math.round(checkup)));
-
-  return { ...result, healthScore: score, severity, isHealthy, nextCheckupDays: checkup };
 }
 
 /**
@@ -145,9 +139,15 @@ export function reconcileHealth(result) {
  */
 export async function analyzePlantImage(
   jpegBuffer,
-  { previousDiagnosis = null, plantContext = null, mode = 'diagnose' } = {}
+  { previousDiagnosis = null, previousHealthScore = null, previousPhotoUrl = null, careEvents = null, plantContext = null, mode = 'diagnose' } = {}
 ) {
+  const previousImage = await previousPhotoBytes(previousPhotoUrl);
   const parts = [
+    ...(previousImage ? [
+      { text: 'ПРЕДЫДУЩЕЕ фото этого растения для сравнения:' },
+      { inlineData: { mimeType: 'image/jpeg', data: previousImage.toString('base64') } },
+    ] : []),
+    { text: 'ТЕКУЩЕЕ фото. Оцени текущее здоровье именно по нему:' },
     { inlineData: { mimeType: 'image/jpeg', data: jpegBuffer.toString('base64') } },
     { text: 'Проанализируй растение на фото.' },
   ];
@@ -170,10 +170,16 @@ export async function analyzePlantImage(
 
   if (previousDiagnosis) {
     parts.push({
-      text: `Предыдущий диагноз этого растения (${previousDiagnosis.scannedAt}): ${previousDiagnosis.title}. ${previousDiagnosis.description}. Сравни с текущим фото и опиши динамику в progressNote (стало лучше/хуже/без изменений и почему).`,
+      text: `Предыдущий диагноз этого растения (${previousDiagnosis.scannedAt}): ${previousDiagnosis.title}. ${previousDiagnosis.description}. Прошлая оценка здоровья: ${previousHealthScore ?? 'неизвестна'}/100. ${previousImage ? 'Сопоставь предыдущее и текущее фото.' : 'Предыдущее фото недоступно; сравнение только с описанием, не заявляй визуальное подтверждение динамики.'} Опиши динамику в progressNote и отдельно оставшиеся проблемы.`,
     });
   }
+  if (careEvents) parts.push({ text: `Отмеченный пользователем уход (не доказывает выздоровление): ${JSON.stringify(careEvents)}.` });
 
+  ai ||= new GoogleGenAI({
+    apiKey: config.geminiApiKey,
+    // Finish before the app's receive timeout; SDK defaults can otherwise retry five times.
+    httpOptions: { timeout: 45000, retryOptions: { attempts: 1 } },
+  });
   const response = await ai.models.generateContent({
     model: config.geminiModel,
     contents: [{ role: 'user', parts }],
@@ -185,5 +191,5 @@ export async function analyzePlantImage(
     },
   });
 
-  return reconcileHealth(JSON.parse(response.text));
+  return { ...reconcileHealth(JSON.parse(response.text)), comparisonBasis: previousImage ? 'photos' : previousDiagnosis ? 'description' : 'initial' };
 }

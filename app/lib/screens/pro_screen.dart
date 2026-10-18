@@ -23,7 +23,6 @@ class _ProScreenState extends ConsumerState<ProScreen> {
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 210,
             pinned: true,
             backgroundColor: AppColors.primaryContainer,
             foregroundColor: Colors.white,
@@ -31,46 +30,38 @@ class _ProScreenState extends ConsumerState<ProScreen> {
               icon: const Icon(Icons.close),
               onPressed: () => context.pop(),
             ),
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppColors.primaryContainer, AppColors.primary],
-                  ),
+            title: const Text(
+              'Sprout Pro',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.primaryContainer, AppColors.primary],
                 ),
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 40, 24, 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        RichText(
-                          text: TextSpan(
-                            style: theme.textTheme.displayLarge?.copyWith(
-                                fontSize: 34, color: Colors.white),
-                            children: const [
-                              TextSpan(text: 'PlantDoctor '),
-                              TextSpan(
-                                text: 'Pro',
-                                style:
-                                    TextStyle(color: AppColors.secondaryContainer),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Ваш личный эксперт-ботаник в кармане',
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(color: AppColors.primaryFixedDim),
-                        ),
-                      ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Забота о каждом растении',
+                    style: theme.textTheme.headlineLarge?.copyWith(
+                      color: Colors.white,
                     ),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Больше возможностей для диагностики вашего сада',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: AppColors.primaryFixedDim,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -89,14 +80,15 @@ class _ProScreenState extends ConsumerState<ProScreen> {
                   const _Benefit(
                     icon: Icons.forum_outlined,
                     color: AppColors.mintSoft,
-                    title: 'ЭКСПЕРТЫ 24/7',
-                    text: 'Чат с профессиональными ботаниками в любое время.',
+                    title: 'НАБЛЮДЕНИЯ',
+                    text: 'Регулярно проверяйте состояние растений по фото.',
                   ),
                   const _Benefit(
                     icon: Icons.trending_up,
                     color: AppColors.terracottaContainer,
                     title: 'ТРЕКИНГ РОСТА',
-                    text: 'Продвинутая аналитика и история развития.',
+                    text:
+                        'Фото по неделям и история развития доступны в карточке растения.',
                   ),
                   const _Benefit(
                     icon: Icons.block,
@@ -105,9 +97,11 @@ class _ProScreenState extends ConsumerState<ProScreen> {
                     text: 'Ничто не отвлекает от ухода за растениями.',
                   ),
                   const SizedBox(height: 26),
-                  Text('Выберите план',
-                      style: theme.textTheme.headlineMedium,
-                      textAlign: TextAlign.center),
+                  Text(
+                    'Планы после запуска оплаты',
+                    style: theme.textTheme.headlineMedium,
+                    textAlign: TextAlign.center,
+                  ),
                   const SizedBox(height: 16),
                   _PlanTile(
                     selected: _plan == 'yearly',
@@ -130,9 +124,10 @@ class _ProScreenState extends ConsumerState<ProScreen> {
                       showDialog(
                         context: context,
                         builder: (dialogContext) => AlertDialog(
-                          backgroundColor: Colors.white,
+                          backgroundColor: theme.colorScheme.surface,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(24)),
+                            borderRadius: BorderRadius.circular(24),
+                          ),
                           title: const Text('Оплата скоро!'),
                           content: const Text(
                             'Внутренние покупки в разработке. Напишите нам на hello@sproutai.app — включим Pro вручную.',
@@ -146,11 +141,11 @@ class _ProScreenState extends ConsumerState<ProScreen> {
                         ),
                       );
                     },
-                    child: const Text('ПОПРОБОВАТЬ БЕСПЛАТНО 7 ДНЕЙ'),
+                    child: const Text('Как подключить Pro'),
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Отмените в любой момент. Подписка автоматически продлевается после пробного периода.',
+                    'Оплата в приложении пока недоступна. Пробный период и автоматическое продление ещё не запущены.',
                     style: theme.textTheme.labelSmall,
                     textAlign: TextAlign.center,
                   ),
@@ -197,9 +192,13 @@ class _Benefit extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: theme.textTheme.labelLarge?.copyWith(
-                          fontSize: 13, color: AppColors.primary)),
+                  Text(
+                    title,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontSize: 13,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
                   const SizedBox(height: 2),
                   Text(text, style: theme.textTheme.bodyMedium),
                 ],
@@ -238,10 +237,14 @@ class _PlanTile extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: selected ? AppColors.mintSoft : Colors.white,
+          color: selected
+              ? theme.colorScheme.secondaryContainer
+              : theme.colorScheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected ? AppColors.primaryContainer : AppColors.outlineVariant,
+            color: selected
+                ? theme.colorScheme.primary
+                : theme.colorScheme.outlineVariant,
             width: selected ? 1.8 : 1,
           ),
           boxShadow: softShadow(),
@@ -250,7 +253,9 @@ class _PlanTile extends StatelessWidget {
           children: [
             Icon(
               selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: selected ? AppColors.primary : AppColors.outlineVariant,
+              color: selected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outlineVariant,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -260,17 +265,21 @@ class _PlanTile extends StatelessWidget {
                   Row(
                     children: [
                       Flexible(
-                        child: Text(title,
-                            style: theme.textTheme.titleMedium,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
+                        child: Text(
+                          title,
+                          style: theme.textTheme.titleMedium,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       if (badge != null) ...[
                         const SizedBox(width: 8),
                         Flexible(
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
                             decoration: BoxDecoration(
                               color: AppColors.secondaryContainer,
                               borderRadius: BorderRadius.circular(99),
@@ -298,14 +307,16 @@ class _PlanTile extends StatelessWidget {
             if (trailing != null) ...[
               const SizedBox(width: 8),
               Flexible(
-                child: Text(trailing!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.end,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: AppColors.secondary,
-                      fontWeight: FontWeight.w600,
-                    )),
+                child: Text(
+                  trailing!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ],
           ],

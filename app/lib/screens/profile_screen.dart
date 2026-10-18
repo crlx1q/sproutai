@@ -21,7 +21,9 @@ class ProfileScreen extends ConsumerWidget {
 
     if (auth is! AuthLoggedIn) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
       );
     }
     final user = auth.user;
@@ -57,7 +59,9 @@ class ProfileScreen extends ConsumerWidget {
                       const SizedBox(height: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: user.isPro
                               ? AppColors.secondaryContainer
@@ -85,8 +89,7 @@ class ProfileScreen extends ConsumerWidget {
           Row(
             children: [
               Expanded(
-                child: _StatCard(
-                    value: '${plants.length}', label: 'Растений'),
+                child: _StatCard(value: '${plants.length}', label: 'Растений'),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -98,8 +101,8 @@ class ProfileScreen extends ConsumerWidget {
                   value: quota == null
                       ? '—'
                       : quota.isUnlimited
-                          ? '∞'
-                          : '${quota.remaining}',
+                      ? '∞'
+                      : '${quota.remaining}',
                   label: 'Сканов ост.',
                 ),
               ),
@@ -112,20 +115,27 @@ class ProfileScreen extends ConsumerWidget {
               onTap: () => context.push('/pro'),
               child: Row(
                 children: [
-                  const Icon(Icons.auto_awesome,
-                      color: AppColors.secondaryContainer, size: 30),
+                  const Icon(
+                    Icons.auto_awesome,
+                    color: AppColors.secondaryContainer,
+                    size: 30,
+                  ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Перейти на Pro',
-                            style: theme.textTheme.titleMedium
-                                ?.copyWith(color: Colors.white)),
                         Text(
-                          'Безлимит диагностик и эксперты 24/7',
-                          style: theme.textTheme.labelSmall
-                              ?.copyWith(color: AppColors.primaryFixedDim),
+                          'Перейти на Pro',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: Colors.white,
+                          ),
+                        ),
+                        Text(
+                          'Больше возможностей для диагностики',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: AppColors.primaryFixedDim,
+                          ),
                         ),
                       ],
                     ),
@@ -141,12 +151,17 @@ class ProfileScreen extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               child: Row(
                 children: [
-                  Icon(Icons.dark_mode_outlined,
-                      size: 22, color: theme.colorScheme.secondary),
+                  Icon(
+                    Icons.dark_mode_outlined,
+                    size: 22,
+                    color: theme.colorScheme.secondary,
+                  ),
                   const SizedBox(width: 14),
                   Expanded(
-                    child: Text('Тёмная тема',
-                        style: theme.textTheme.bodyLarge),
+                    child: Text(
+                      'Тёмная тема',
+                      style: theme.textTheme.bodyLarge,
+                    ),
                   ),
                   Switch(
                     value: ref.watch(themeModeProvider) == ThemeMode.dark,
@@ -173,9 +188,9 @@ class ProfileScreen extends ConsumerWidget {
                 }
               } catch (e) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(apiErrorMessage(e))),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
                 }
               }
             },
@@ -188,8 +203,7 @@ class ProfileScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 24),
           Center(
-            child: Text('Sprout AI v2.0.0',
-                style: theme.textTheme.labelSmall),
+            child: Text('Sprout AI v2.0.0', style: theme.textTheme.labelSmall),
           ),
         ],
       ),
@@ -210,10 +224,16 @@ class _StatCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 18),
       child: Column(
         children: [
-          Text(value,
-              style: theme.textTheme.headlineLarge?.copyWith(fontSize: 26)),
+          Text(
+            value,
+            style: theme.textTheme.headlineLarge?.copyWith(fontSize: 26),
+          ),
           const SizedBox(height: 2),
-          Text(label, style: theme.textTheme.labelSmall),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.labelSmall,
+          ),
         ],
       ),
     );
@@ -245,18 +265,20 @@ class _MenuTile extends StatelessWidget {
         onTap: onTap,
         child: Row(
           children: [
-            Icon(icon, size: 22, color: color ?? AppColors.secondary),
+            Icon(icon, size: 22, color: color ?? theme.colorScheme.primary),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w500,
-                        color: color ?? AppColors.onSurface,
-                      )),
+                  Text(
+                    title,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w500,
+                      color: color ?? theme.colorScheme.onSurface,
+                    ),
+                  ),
                   if (subtitle != null)
                     Text(subtitle!, style: theme.textTheme.labelSmall),
                 ],

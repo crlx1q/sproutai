@@ -41,16 +41,34 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
   }
 
   Future<void> _pickPhoto(ImageSource source) async {
-    final picked = await ImagePicker()
-        .pickImage(source: source, maxWidth: 1600, imageQuality: 88);
-    if (picked != null) setState(() => _photo = picked);
+    if (_busy) return;
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 1600,
+        imageQuality: 88,
+      );
+      if (mounted && picked != null) setState(() => _photo = picked);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Не удалось открыть фото. Проверьте разрешения приложения.',
+            ),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_busy || !_formKey.currentState!.validate()) return;
     setState(() => _busy = true);
     try {
-      await ref.read(plantsProvider.notifier).addPlant(
+      await ref
+          .read(plantsProvider.notifier)
+          .addPlant(
             name: _name.text.trim(),
             species: _species.text.trim(),
             location: _location,
@@ -59,20 +77,26 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
             plantedAt: _origin == 'grown' ? _plantedAt : null,
             growthGoal: _origin == 'grown' ? _goal.text.trim() : null,
             photo: _photo != null
-                ? await MultipartFile.fromFile(_photo!.path, filename: 'plant.jpg')
+                ? await MultipartFile.fromFile(
+                    _photo!.path,
+                    filename: 'plant.jpg',
+                  )
                 : null,
             care: _manualCare ? {'wateringIntervalDays': _wateringDays} : null,
           );
       if (mounted) {
         context.pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('«${_name.text.trim()}» теперь в вашем саду 🌿')),
+          SnackBar(
+            content: Text('«${_name.text.trim()}» теперь в вашем саду 🌿'),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -93,9 +117,11 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
               GestureDetector(
                 onTap: () => showModalBottomSheet(
                   context: context,
-                  backgroundColor: Colors.white,
+                  backgroundColor: theme.colorScheme.surface,
                   shape: const RoundedRectangleBorder(
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(24),
+                    ),
                   ),
                   builder: (sheetContext) => SafeArea(
                     child: Column(
@@ -137,12 +163,18 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
                       ? Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Icon(Icons.add_a_photo_outlined,
-                                size: 40, color: AppColors.secondary),
+                            const Icon(
+                              Icons.add_a_photo_outlined,
+                              size: 40,
+                              color: AppColors.secondary,
+                            ),
                             const SizedBox(height: 10),
-                            Text('Добавить фото',
-                                style: theme.textTheme.bodyMedium
-                                    ?.copyWith(color: AppColors.secondary)),
+                            Text(
+                              'Добавить фото',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: AppColors.secondary,
+                              ),
+                            ),
                           ],
                         )
                       : null,
@@ -156,16 +188,24 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
               const SizedBox(height: 20),
               TextFormField(
                 controller: _name,
+                maxLength: 80,
                 textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(hintText: 'Имя растения, например «Монстера»'),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Дайте растению имя' : null,
+                decoration: const InputDecoration(
+                  labelText: 'Личное имя растения',
+                  hintText: 'Например, «Монстера у окна»',
+                  helperText: 'Так вы отличите растения одного вида.',
+                  helperMaxLines: 2,
+                ),
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Дайте растению имя'
+                    : null,
               ),
               const SizedBox(height: 14),
               TextFormField(
                 controller: _species,
-                decoration:
-                    const InputDecoration(hintText: 'Вид (необязательно)'),
+                decoration: const InputDecoration(
+                  hintText: 'Вид (необязательно)',
+                ),
               ),
               const SizedBox(height: 24),
               Text('Где живёт', style: theme.textTheme.titleMedium),
@@ -220,7 +260,9 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
                           firstDate: DateTime(2015),
                           lastDate: DateTime.now(),
                         );
-                        if (picked != null) setState(() => _plantedAt = picked);
+                        if (mounted && picked != null) {
+                          setState(() => _plantedAt = picked);
+                        }
                       },
                       child: const Text('Изменить'),
                     ),
@@ -230,7 +272,9 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
                 TextFormField(
                   controller: _goal,
                   decoration: const InputDecoration(
-                      hintText: 'Цель, например «зацвести к лету» (необязательно)'),
+                    hintText:
+                        'Цель, например «зацвести к лету» (необязательно)',
+                  ),
                 ),
               ],
               const SizedBox(height: 24),
@@ -240,12 +284,16 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Настроить полив вручную',
-                            style: theme.textTheme.titleMedium),
+                        Text(
+                          'Настроить полив вручную',
+                          style: theme.textTheme.titleMedium,
+                        ),
                         Text(
                           _manualCare
                               ? 'Раз в $_wateringDays дн.'
-                              : 'ИИ подберёт график по фото и виду',
+                              : _photo != null
+                              ? 'ИИ подберёт график по фото. Анализ использует один скан.'
+                              : 'Без фото — полив раз в 7 дней. Уточните график после диагностики.',
                           style: theme.textTheme.labelSmall,
                         ),
                       ],
@@ -275,7 +323,9 @@ class _AddPlantScreenState extends ConsumerState<AddPlantScreen> {
                         width: 22,
                         height: 22,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2.4, color: Colors.white),
+                          strokeWidth: 2.4,
+                          color: Colors.white,
+                        ),
                       )
                     : const Text('Добавить в сад'),
               ),
@@ -302,6 +352,7 @@ class _LocationChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
@@ -309,25 +360,35 @@ class _LocationChip extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            color: selected ? AppColors.secondaryContainer : AppColors.surfaceContainerLow,
+            color: selected
+                ? scheme.secondaryContainer
+                : scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: selected ? AppColors.secondary : Colors.transparent,
+              color: selected ? scheme.primary : Colors.transparent,
               width: 1.4,
             ),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 19,
-                  color: selected ? AppColors.primary : AppColors.outline),
+              Icon(
+                icon,
+                size: 19,
+                color: selected ? scheme.onSecondaryContainer : scheme.outline,
+              ),
               const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                  color: selected ? AppColors.primary : AppColors.onSurfaceVariant,
+              Flexible(
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: selected
+                        ? scheme.onSecondaryContainer
+                        : scheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ],
@@ -337,7 +398,6 @@ class _LocationChip extends StatelessWidget {
     );
   }
 }
-
 
 const Map<String, String> _stageOptions = {
   'seed': 'Семя',

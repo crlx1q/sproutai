@@ -3,24 +3,42 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/api.dart';
 import '../models/models.dart';
+import 'auth_provider.dart';
 
-final feedProvider = AsyncNotifierProvider<FeedNotifier, List<Post>>(FeedNotifier.new);
+final feedProvider = AsyncNotifierProvider<FeedNotifier, List<Post>>(
+  FeedNotifier.new,
+);
 
 class FeedNotifier extends AsyncNotifier<List<Post>> {
   ApiClient get _api => ref.read(apiProvider);
+  final _likesInFlight = <String>{};
+  String? get _userId {
+    final auth = ref.read(authProvider);
+    return auth is AuthLoggedIn ? auth.user.id : null;
+  }
 
   @override
-  Future<List<Post>> build() => _fetch();
+  Future<List<Post>> build() {
+    final userId = ref.watch(
+      authProvider.select((auth) => auth is AuthLoggedIn ? auth.user.id : null),
+    );
+    return userId == null ? Future.value([]) : _fetch();
+  }
 
   Future<List<Post>> _fetch() async {
+    final userId = _userId;
+    if (userId == null) return [];
     final res = await _api.dio.get('/api/community/posts');
+    if (!ref.mounted || userId != _userId) return [];
     return (res.data['posts'] as List)
         .map((e) => Post.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
   Future<void> reload() async {
-    state = await AsyncValue.guard(_fetch);
+    final userId = _userId;
+    final result = await AsyncValue.guard(_fetch);
+    if (ref.mounted && userId == _userId) state = result;
   }
 
   Future<void> createPost({required String text, MultipartFile? image}) async {
@@ -33,6 +51,7 @@ class FeedNotifier extends AsyncNotifier<List<Post>> {
   }
 
   Future<void> toggleLike(String postId) async {
+    if (!_likesInFlight.add(postId)) return;
     final current = state.value;
     if (current != null) {
       state = AsyncValue.data([
@@ -43,22 +62,29 @@ class FeedNotifier extends AsyncNotifier<List<Post>> {
               likesCount: p.likesCount + (p.likedByMe ? -1 : 1),
             )
           else
-            p
+            p,
       ]);
     }
     try {
       await _api.dio.post('/api/community/posts/$postId/like');
     } catch (_) {
-      await reload();
+      if (ref.mounted) await reload();
+    } finally {
+      _likesInFlight.remove(postId);
     }
   }
 }
 
 final commentsProvider = FutureProvider.autoDispose
     .family<List<PostComment>, String>((ref, postId) async {
-  final api = ref.watch(apiProvider);
-  final res = await api.dio.get('/api/community/posts/$postId/comments');
-  return (res.data['comments'] as List)
-      .map((e) => PostComment.fromJson(e as Map<String, dynamic>))
-      .toList();
-});
+      ref.watch(
+        authProvider.select(
+          (auth) => auth is AuthLoggedIn ? auth.user.id : null,
+        ),
+      );
+      final api = ref.watch(apiProvider);
+      final res = await api.dio.get('/api/community/posts/$postId/comments');
+      return (res.data['comments'] as List)
+          .map((e) => PostComment.fromJson(e as Map<String, dynamic>))
+          .toList();
+    });

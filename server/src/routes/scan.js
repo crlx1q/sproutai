@@ -1,119 +1,59 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import { requireAuth } from '../middleware/auth.js';
 import { upload, saveImage, toGeminiJpeg } from '../utils/upload.js';
 import { analyzePlantImage } from '../services/gemini.js';
+import { scanQuota, AnalysisError } from '../services/scanQuota.js';
 import { Scan } from '../models/Scan.js';
 import { Plant } from '../models/Plant.js';
-import { config } from '../config.js';
+import { JournalEntry } from '../models/JournalEntry.js';
+import { applyPlantAnalysis, journalSnapshot } from '../utils/plantCare.js';
+import { analysisOptions, ensureBaseline, ownPlantView, syncCareReminders } from '../services/plantProgress.js';
 
 const router = Router();
 router.use(requireAuth);
 
-function isPro(user) {
-  return user.plan === 'pro' && (!user.proUntil || user.proUntil > new Date());
-}
-
-function resetPeriodIfNeeded(user) {
-  const monthMs = 30 * 86400000;
-  if (Date.now() - user.scansPeriodStart.getTime() > monthMs) {
-    user.scansUsed = 0;
-    user.scansPeriodStart = new Date();
-  }
-}
-
 router.get('/quota', async (req, res) => {
-  resetPeriodIfNeeded(req.user);
-  await req.user.save();
-  const pro = isPro(req.user);
-  res.json({
-    plan: pro ? 'pro' : 'free',
-    limit: pro ? null : config.freeScansPerMonth,
-    used: req.user.scansUsed,
-    remaining: pro ? null : Math.max(0, config.freeScansPerMonth - req.user.scansUsed),
-  });
+  res.json(await scanQuota.view(req.user));
 });
 
 router.post('/', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Нужно фото (поле image)' });
-
-  const user = req.user;
-  resetPeriodIfNeeded(user);
-  const pro = isPro(user);
-  if (!pro && user.scansUsed >= config.freeScansPerMonth) {
-    return res.status(402).json({
-      error: 'Лимит бесплатных сканов исчерпан. Оформите Pro для безлимита.',
-      code: 'SCAN_LIMIT',
-    });
-  }
-
   let plant = null;
   if (req.body.plantId) {
-    plant = await Plant.findOne({ _id: req.body.plantId, userId: user._id });
+    if (!mongoose.isValidObjectId(req.body.plantId)) return res.status(400).json({ error: 'Некорректный идентификатор растения' });
+    plant = await Plant.findOne({ _id: req.body.plantId, userId: req.user._id });
     if (!plant) return res.status(404).json({ error: 'Растение не найдено' });
   }
-
-  const [imageUrl, geminiJpeg] = await Promise.all([
-    saveImage(req.file.buffer),
-    toGeminiJpeg(req.file.buffer),
-  ]);
-
-  let result;
   try {
-    result = await analyzePlantImage(geminiJpeg, {
-      previousDiagnosis: plant?.lastDiagnosis || null,
-      plantContext: plant
-        ? { name: plant.name, species: plant.species, location: plant.location, stage: plant.stage }
-        : null,
-      mode: plant?.origin === 'grown' ? 'grow' : 'diagnose',
+    const jpeg = await toGeminiJpeg(req.file.buffer);
+    const outcome = await scanQuota.run(req.user,
+      () => analyzePlantImage(jpeg, plant ? analysisOptions(plant) : {}),
+      async (result) => {
+        const imageUrl = await saveImage(req.file.buffer);
+        const scan = await Scan.create({ userId: req.user._id, plantId: plant?._id || null, imageUrl, result });
+        if (plant) {
+          const previousScore = plant.lastDiagnosis ? plant.healthScore : null;
+          await ensureBaseline(plant);
+          await JournalEntry.create({
+            userId: req.user._id, plantId: plant._id, photoUrl: imageUrl, source: 'checkup', kind: 'progress',
+            ...journalSnapshot(result, previousScore),
+          });
+          applyPlantAnalysis(plant, result, { photoUrl: imageUrl, now: scan.createdAt, scanId: scan._id });
+          await plant.save();
+          await syncCareReminders(plant);
+        }
+        return scan;
+      }, { allowNonPlant: true });
+    res.json({
+      scanId: outcome.value?._id || '', imageUrl: outcome.value?.imageUrl || '', result: outcome.result,
+      plant: plant ? await ownPlantView(plant) : null, quota: outcome.quota,
     });
-  } catch (err) {
-    console.error('[scan] gemini error:', err.message);
-    return res.status(502).json({ error: 'ИИ временно недоступен, попробуйте ещё раз' });
+  } catch (error) {
+    if (error instanceof AnalysisError) return res.status(error.status).json({ error: error.message, code: error.code });
+    console.error('[scan]', error.message);
+    return res.status(502).json({ error: 'ИИ временно недоступен. Попробуйте ещё раз: скан не списан.' });
   }
-
-  const scan = await Scan.create({
-    userId: user._id,
-    plantId: plant?._id || null,
-    imageUrl,
-    result,
-  });
-
-  user.scansUsed += 1;
-  await user.save();
-
-  if (plant && result.isPlant) {
-    plant.lastDiagnosis = {
-      isHealthy: result.isHealthy,
-      title: result.diagnosis.title,
-      description: result.diagnosis.description,
-      confidence: result.diagnosis.confidence,
-      treatmentPlan: result.treatmentPlan,
-      scanId: scan._id,
-      scannedAt: new Date(),
-    };
-    plant.healthScore = result.healthScore;
-    plant.healthStatus = result.isHealthy
-      ? 'thriving'
-      : result.healthScore >= 55
-        ? 'needs_attention'
-        : 'sick';
-    if (!plant.species && result.species) plant.species = result.species;
-    const nextDays = result.nextCheckupDays || plant.care.checkupIntervalDays || 14;
-    plant.care.checkupIntervalDays = nextDays;
-    plant.lastCheckupAt = new Date();
-    plant.nextCheckupAt = new Date(Date.now() + nextDays * 86400000);
-    await plant.save();
-  }
-
-  res.json({
-    scanId: scan._id,
-    imageUrl,
-    result,
-    plant: plant || null,
-    quota: {
-      remaining: pro ? null : Math.max(0, config.freeScansPerMonth - user.scansUsed),
-    },
-  });
 });
 
 router.get('/history', async (req, res) => {

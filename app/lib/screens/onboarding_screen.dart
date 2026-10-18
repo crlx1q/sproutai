@@ -50,15 +50,36 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-              child: Row(
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 12,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.asset('assets/logo.png', width: 30, height: 30),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.sizeOf(context).width - 48,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.asset(
+                            'assets/logo.png',
+                            width: 30,
+                            height: 30,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            'Sprout AI',
+                            style: theme.textTheme.titleLarge,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(width: 8),
-                  Text('Sprout AI', style: theme.textTheme.titleLarge),
-                  const Spacer(),
                   TextButton(
                     onPressed: () => context.go('/auth'),
                     child: const Text('Пропустить'),
@@ -73,34 +94,50 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 onPageChanged: (i) => setState(() => _page = i),
                 itemBuilder: (context, i) {
                   final slide = _slides[i];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 180,
-                          height: 180,
-                          decoration: BoxDecoration(
-                            color: AppColors.secondaryContainer,
-                            shape: BoxShape.circle,
-                            boxShadow: softShadow(),
+                  return LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 16,
                           ),
-                          child: Icon(slide.icon, size: 80, color: AppColors.primary),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: constraints.maxHeight < 400 ? 100 : 180,
+                                height: constraints.maxHeight < 400 ? 100 : 180,
+                                decoration: BoxDecoration(
+                                  color: AppColors.secondaryContainer,
+                                  shape: BoxShape.circle,
+                                  boxShadow: softShadow(),
+                                ),
+                                child: Icon(
+                                  slide.icon,
+                                  size: 80,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              Text(
+                                slide.title,
+                                style: theme.textTheme.headlineLarge,
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                slide.text,
+                                style: theme.textTheme.bodyMedium,
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 48),
-                        Text(
-                          slide.title,
-                          style: theme.textTheme.headlineLarge,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          slide.text,
-                          style: theme.textTheme.bodyMedium,
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
+                      ),
                     ),
                   );
                 },
@@ -115,7 +152,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   width: _page == i ? 26 : 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: _page == i ? AppColors.primary : AppColors.outlineVariant,
+                    color: _page == i
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.outlineVariant,
                     borderRadius: BorderRadius.circular(99),
                   ),
                 );

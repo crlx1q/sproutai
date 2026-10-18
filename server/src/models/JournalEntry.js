@@ -10,6 +10,9 @@ const journalEntrySchema = new mongoose.Schema(
     healthScore: { type: Number, min: 0, max: 100, default: null },
     healthStatus: { type: String, enum: ['thriving', 'needs_attention', 'sick', null], default: null },
     analysis: { type: String, default: '' },
+    diagnosisTitle: { type: String, default: '' },
+    diagnosisDescription: { type: String, default: '' },
+    source: { type: String, enum: ['baseline', 'checkup', 'journal'], default: 'journal' },
     trend: { type: String, enum: ['up', 'down', 'same', null], default: null },
   },
   { timestamps: true }

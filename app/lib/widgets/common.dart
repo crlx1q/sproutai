@@ -12,22 +12,57 @@ class StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, bg, fg, icon) = switch (status) {
-      'thriving' => ('Здоров', AppColors.secondaryContainer, AppColors.secondary, Icons.favorite_border),
-      'thirsty' => ('Хочет пить', AppColors.mintSoft, AppColors.secondary, Icons.water_drop_outlined),
-      'needs_attention' => ('Нужен уход', AppColors.terracottaContainer, AppColors.terracotta, Icons.warning_amber_rounded),
-      _ => ('Болеет', AppColors.terracottaContainer, AppColors.terracotta, Icons.healing_outlined),
+      'thriving' => (
+        'Здоров',
+        AppColors.secondaryContainer,
+        AppColors.secondary,
+        Icons.favorite_border,
+      ),
+      'thirsty' => (
+        'Хочет пить',
+        AppColors.mintSoft,
+        AppColors.secondary,
+        Icons.water_drop_outlined,
+      ),
+      'needs_attention' => (
+        'Есть проблемы',
+        AppColors.terracottaContainer,
+        AppColors.terracotta,
+        Icons.warning_amber_rounded,
+      ),
+      'sick' => (
+        'Болеет',
+        AppColors.terracottaContainer,
+        AppColors.terracotta,
+        Icons.healing_outlined,
+      ),
+      _ => (
+        'Нужна проверка',
+        AppColors.sage,
+        AppColors.onSurfaceVariant,
+        Icons.help_outline,
+      ),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(99)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(99),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 13, color: fg),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: fg),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: fg,
+              ),
+            ),
           ),
         ],
       ),
@@ -36,7 +71,13 @@ class StatusChip extends StatelessWidget {
 }
 
 class PlantImage extends StatelessWidget {
-  const PlantImage({super.key, this.url, this.height, this.width, this.radius = 16});
+  const PlantImage({
+    super.key,
+    this.url,
+    this.height,
+    this.width,
+    this.radius = 16,
+  });
 
   final String? url;
   final double? height;
@@ -57,8 +98,11 @@ class PlantImage extends StatelessWidget {
               width: width,
               color: placeholderBg,
               child: Center(
-                child: Icon(Icons.local_florist_outlined,
-                    size: 42, color: placeholderFg),
+                child: Icon(
+                  Icons.local_florist_outlined,
+                  size: 42,
+                  color: placeholderFg,
+                ),
               ),
             )
           : CachedNetworkImage(
@@ -69,8 +113,7 @@ class PlantImage extends StatelessWidget {
               placeholder: (_, __) => Container(color: placeholderBg),
               errorWidget: (_, __, ___) => Container(
                 color: placeholderBg,
-                child: Icon(Icons.local_florist_outlined,
-                    color: placeholderFg),
+                child: Icon(Icons.local_florist_outlined, color: placeholderFg),
               ),
             ),
     );
@@ -78,7 +121,13 @@ class PlantImage extends StatelessWidget {
 }
 
 class SoftCard extends StatelessWidget {
-  const SoftCard({super.key, required this.child, this.padding, this.color, this.onTap});
+  const SoftCard({
+    super.key,
+    required this.child,
+    this.padding,
+    this.color,
+    this.onTap,
+  });
 
   final Widget child;
   final EdgeInsetsGeometry? padding;
@@ -90,7 +139,8 @@ class SoftCard extends StatelessWidget {
     final card = Container(
       padding: padding ?? const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: color ??
+        color:
+            color ??
             (Theme.of(context).brightness == Brightness.dark
                 ? AppColors.darkCard
                 : Colors.white),
@@ -105,7 +155,12 @@ class SoftCard extends StatelessWidget {
 }
 
 class SectionHeader extends StatelessWidget {
-  const SectionHeader({super.key, required this.title, this.action, this.onAction});
+  const SectionHeader({
+    super.key,
+    required this.title,
+    this.action,
+    this.onAction,
+  });
 
   final String title;
   final String? action;
@@ -116,9 +171,16 @@ class SectionHeader extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(title, style: Theme.of(context).textTheme.headlineMedium),
+        Expanded(
+          child: Text(title, style: Theme.of(context).textTheme.headlineMedium),
+        ),
         if (action != null)
-          TextButton(onPressed: onAction, child: Text(action!)),
+          Flexible(
+            child: TextButton(
+              onPressed: onAction,
+              child: Text(action!, textAlign: TextAlign.end),
+            ),
+          ),
       ],
     );
   }

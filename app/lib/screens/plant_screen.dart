@@ -6,1166 +6,871 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../core/api.dart';
-import '../core/theme.dart';
 import '../models/models.dart';
+import '../models/weekly_history.dart';
 import '../providers/plants_provider.dart';
 import '../widgets/common.dart';
+import '../widgets/plant_history.dart';
 
-// --- Адаптивные цвета для тёмной/светлой темы (контраст) ---
-bool _isDark(BuildContext c) => Theme.of(c).brightness == Brightness.dark;
-
-/// Яркий красный для текста/иконок (чуть ярче в обеих темах).
-Color _danger(BuildContext c) =>
-    _isDark(c) ? const Color(0xFFFF8F7E) : const Color(0xFFC2371B);
-
-/// Акцент «здорово».
-Color _good(BuildContext c) =>
-    _isDark(c) ? AppColors.darkOnSecondaryContainer : AppColors.secondary;
-
-/// Фон карточки-предупреждения.
-Color _dangerContainer(BuildContext c) =>
-    _isDark(c) ? const Color(0xFF48170C) : AppColors.terracottaContainer;
-
-/// Фон «здоровой» карточки.
-Color _goodContainer(BuildContext c) =>
-    _isDark(c) ? AppColors.darkSecondaryContainer : AppColors.mintSoft;
-
-/// Нейтральный контейнер (плашки, прогресс-бары).
-Color _neutralContainer(BuildContext c) =>
-    _isDark(c) ? AppColors.darkSurfaceContainerHigh : AppColors.surfaceContainer;
-
-/// Цвет текста-значения.
-Color _valueColor(BuildContext c) =>
-    _isDark(c) ? AppColors.darkOnSurface : AppColors.onSurface;
-
-/// Фон карточки-плитки по умолчанию (контрастнее фона).
-Color _tileCard(BuildContext c) =>
-    _isDark(c) ? AppColors.darkSurfaceContainerHigh : Colors.white;
-
-class PlantScreen extends ConsumerWidget {
+class PlantScreen extends ConsumerStatefulWidget {
   const PlantScreen({super.key, required this.plantId});
-
   final String plantId;
-
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final detailsAsync = ref.watch(plantDetailsProvider(plantId));
-
-    return Scaffold(
-      body: detailsAsync.when(
-        loading: () => const Center(
-            child: CircularProgressIndicator(color: AppColors.primary)),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Text(apiErrorMessage(e), textAlign: TextAlign.center),
-          ),
-        ),
-        data: (details) => _PlantDetailsView(details: details),
-      ),
-    );
-  }
+  ConsumerState<PlantScreen> createState() => _PlantScreenState();
 }
 
-class _PlantDetailsView extends ConsumerWidget {
-  const _PlantDetailsView({required this.details});
+class _PlantScreenState extends ConsumerState<PlantScreen> {
+  bool _busy = false;
+  PlantsNotifier get _plants => ref.read(plantsProvider.notifier);
 
-  final PlantDetails details;
+  void _message(String text) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    }
+  }
+
+  Future<void> _perform(Future<void> Function() action, String success) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await action();
+      _message(success);
+    } catch (error) {
+      _message(apiErrorMessage(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final plant = details.plant;
-    final diagnosis = plant.lastDiagnosis;
-
-    return CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          expandedHeight: 300,
-          pinned: true,
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
-          iconTheme: const IconThemeData(color: Colors.white),
-          actionsIconTheme: const IconThemeData(color: Colors.white),
-          actions: [
+  Widget build(BuildContext context) {
+    final details = ref.watch(plantDetailsProvider(widget.plantId));
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Моё растение'),
+        actions: [
+          if (details.value != null)
             PopupMenuButton<String>(
-              color: _isDark(context)
-                  ? AppColors.darkSurfaceContainerHigh
-                  : Colors.white,
-              onSelected: (v) async {
-                if (v == 'delete') {
-                  final confirmed = await showDialog<bool>(
-                    context: context,
-                    builder: (dialogContext) => AlertDialog(
-                      backgroundColor: _isDark(context) ? AppColors.darkSurfaceContainerHigh : Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24)),
-                      title: const Text('Удалить растение?'),
-                      content: const Text(
-                          'Журнал и напоминания тоже будут удалены.'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, false),
-                          child: const Text('Отмена'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, true),
-                          child: Text('Удалить',
-                              style: TextStyle(color: _danger(context))),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (confirmed == true && context.mounted) {
-                    await ref
-                        .read(plantsProvider.notifier)
-                        .deletePlant(plant.id);
-                    if (context.mounted) context.pop();
-                  }
-                }
+              enabled: !_busy,
+              onSelected: (value) {
+                if (value == 'rename') _rename(details.value!.plant);
+                if (value == 'delete') _delete();
               },
-              itemBuilder: (_) => [
-                PopupMenuItem(
-                    value: 'delete',
-                    child: Text('Удалить растение',
-                        style: TextStyle(color: _danger(context)))),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'rename', child: Text('Имя и место')),
+                PopupMenuItem(value: 'delete', child: Text('Удалить растение')),
               ],
             ),
-          ],
-          flexibleSpace: FlexibleSpaceBar(
-            titlePadding:
-                const EdgeInsets.symmetric(horizontal: 52, vertical: 14),
-            title: Text(
-              plant.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleLarge?.copyWith(color: Colors.white),
-            ),
-            background: Stack(
-              fit: StackFit.expand,
-              children: [
-                PlantImage(url: plant.photoUrl, radius: 0),
-                const DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, Color(0xC0012D1D)],
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 20,
-                  bottom: 52,
+        ],
+      ),
+      body: Column(
+        children: [
+          if (_busy) const LinearProgressIndicator(),
+          Expanded(
+            child: details.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, _) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (plant.species.isNotEmpty)
-                        Text(
-                          plant.species,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: AppColors.primaryFixedDim,
-                            fontStyle: FontStyle.italic,
-                          ),
+                      Text(apiErrorMessage(error), textAlign: TextAlign.center),
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: () => ref.invalidate(
+                          plantDetailsProvider(widget.plantId),
                         ),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                        child: Text(
-                          plant.location == 'indoor' ? 'Комнатное' : 'Уличное',
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600),
-                        ),
+                        child: const Text('Повторить'),
                       ),
-                      if (plant.isGrown) ...[
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: AppColors.secondary.withValues(alpha: 0.9),
-                            borderRadius: BorderRadius.circular(99),
-                          ),
-                          child: Text(
-                            '🌱 ${stageLabel(plant.stage)}',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
-              ],
+              ),
+              data: _content,
             ),
           ),
-        ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+        ],
+      ),
+    );
+  }
+
+  Widget _content(PlantDetails details) {
+    final plant = details.plant;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final diagnosis = plant.lastDiagnosis;
+    final weeks = details.weeklyHistory.isNotEmpty
+        ? details.weeklyHistory
+        : buildWeeklyHistory(plant, details.journal);
+    final notes = details.journal
+        .where((entry) => entry.photoUrl?.isNotEmpty != true)
+        .toList();
+    final quota = ref.watch(scanQuotaProvider).value;
+    return RefreshIndicator(
+      onRefresh: () async {
+        ref.invalidate(plantDetailsProvider(plant.id));
+        await ref.read(plantDetailsProvider(plant.id).future);
+      },
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          PlantImage(url: plant.photoUrl, height: 250, width: double.infinity),
+          const SizedBox(height: 16),
+          Text(plant.name, style: theme.textTheme.headlineLarge),
+          if (plant.species.isNotEmpty)
+            Text(plant.species, style: theme.textTheme.bodyMedium),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 10,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(plant.location == 'outdoor' ? 'На улице' : 'В помещении'),
+              if (plant.isGrown) Text('🌱 ${stageLabel(plant.stage)}'),
+              TextButton.icon(
+                onPressed: _busy ? null : () => _rename(plant),
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('Подписать'),
+              ),
+            ],
+          ),
+          if (plant.growthGoal.isNotEmpty) Text('Цель: ${plant.growthGoal}'),
+          const SizedBox(height: 16),
+          SoftCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Кнопки быстрых действий
-                Row(
+                Text('Текущее состояние', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () async {
-                          await ref
-                              .read(plantsProvider.notifier)
-                              .water(plant.id);
-                          ref.invalidate(plantDetailsProvider(plant.id));
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Полив отмечен 💧')),
-                            );
-                          }
-                        },
-                        icon: const Icon(Icons.water_drop_outlined, size: 19),
-                        label: Text(plant.needsWater ? 'Полить сейчас' : 'Полито'),
-                      ),
+                    Text(
+                      '${plant.healthScore}/100',
+                      style: theme.textTheme.headlineMedium,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => context.go('/scan'),
-                        icon: const Icon(Icons.center_focus_weak, size: 19),
-                        label: const Text('Скан'),
-                      ),
-                    ),
+                    StatusChip(status: plant.healthStatus),
                   ],
                 ),
-                const SizedBox(height: 24),
-
-                // Health score
-                SoftCard(
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: plant.healthScore.clamp(0, 100) / 100,
+                    minHeight: 8,
+                    backgroundColor: colors.surfaceContainerHighest,
+                    color: plant.healthStatus == 'sick'
+                        ? colors.error
+                        : colors.primary,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  healthTrendLabel(plant.healthTrend),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: plant.healthTrend == 'down'
+                        ? colors.error
+                        : colors.primary,
+                  ),
+                ),
+                if (plant.previousHealthScore != null)
+                  Text('Предыдущая оценка: ${plant.previousHealthScore}/100'),
+                if (plant.lastProgressNote.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(plant.lastProgressNote),
+                ],
+                if (plant.healthTrend == 'up' &&
+                    plant.healthStatus != 'thriving') ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Есть улучшение, но признаки проблемы ещё сохраняются. '
+                    'Продолжайте план ухода до следующего фото.',
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  'Оценка относится к последнему фото. Между проверками состояние неизвестно.',
+                  style: theme.textTheme.labelSmall,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          SoftCard(
+            color: colors.secondaryContainer,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Еженедельное фото',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: colors.onSecondaryContainer,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Следующая проверка: ${_when(plant.checkupDueAt)}. '
+                  'Снимайте с похожего ракурса и при похожем освещении.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colors.onSecondaryContainer,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: _busy ? null : () => _checkup(plant),
+                  icon: const Icon(Icons.add_a_photo_outlined),
+                  label: const Text('Обновить фото и проверить'),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  quota == null
+                      ? 'ИИ сравнит новое фото с предыдущим состоянием.'
+                      : quota.isUnlimited
+                      ? 'ИИ-проверки без ограничений'
+                      : 'Осталось ИИ-проверок: ${quota.remaining}. Фото без ИИ можно сохранить в дневник.',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: colors.onSecondaryContainer,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (diagnosis != null) ...[
+            const SizedBox(height: 20),
+            SoftCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(diagnosis.title, style: theme.textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  Text(diagnosis.description),
+                  if (diagnosis.treatmentPlan.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    for (final step in diagnosis.treatmentPlan.asMap().entries)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text('${step.key + 1}. ${step.value}'),
+                      ),
+                  ],
+                  if (diagnosis.scannedAt != null)
+                    Text(
+                      'Фото от ${_date(diagnosis.scannedAt!)}',
+                      style: theme.textTheme.labelSmall,
+                    ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 28),
+          Text('Уход и отметки', style: theme.textTheme.headlineMedium),
+          const SizedBox(height: 12),
+          _CareActionCard(
+            title: 'Полив',
+            icon: Icons.water_drop_outlined,
+            due: _when(plant.wateringDueAt),
+            detail:
+                '${plant.care.waterAmountMl} мл · раз в ${plant.care.wateringIntervalDays} дн.',
+            last: plant.lastWateredAt == null
+                ? 'Ещё не отмечен'
+                : 'Последний: ${_date(plant.lastWateredAt!)}',
+            urgent: plant.needsWater,
+            enabled: !_busy,
+            onDone: () => _perform(
+              () => _plants.water(plant.id),
+              'Полив отмечен. Расписание обновлено.',
+            ),
+            onLater: () => _perform(
+              () => _plants.snooze(plant.id, 'watering'),
+              'Полив отложен до завтра.',
+            ),
+            doneLabel: 'Полил(а)',
+          ),
+          const SizedBox(height: 12),
+          _CareActionCard(
+            title: 'Удобрение',
+            icon: Icons.eco_outlined,
+            due: _when(plant.fertilizingDueAt),
+            detail: 'Раз в ${plant.care.fertilizerIntervalDays} дн.',
+            last: plant.lastFertilizedAt == null
+                ? 'Ещё не отмечено'
+                : 'Последнее: ${_date(plant.lastFertilizedAt!)}',
+            urgent: plant.needsFertilizer,
+            enabled: !_busy,
+            onDone: () => _perform(
+              () => _plants.fertilize(plant.id),
+              'Подкормка отмечена. Следующий срок пересчитан.',
+            ),
+            onLater: () => _perform(
+              () => _plants.snooze(plant.id, 'fertilizing'),
+              'Подкормка отложена до завтра.',
+            ),
+            doneLabel: 'Удобрил(а)',
+          ),
+          const SizedBox(height: 16),
+          SoftCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Условия', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 8),
+                _condition(Icons.wb_sunny_outlined, 'Свет', plant.care.light),
+                _condition(
+                  Icons.thermostat_outlined,
+                  'Температура',
+                  plant.care.temperature,
+                ),
+                TextButton.icon(
+                  onPressed: _busy ? null : () => _editCare(plant),
+                  icon: const Icon(Icons.tune),
+                  label: const Text('Изменить расписание и условия'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
+          Text('История по неделям', style: theme.textTheme.headlineMedium),
+          const SizedBox(height: 10),
+          WeeklyPlantHistory(weeks: weeks, journal: details.journal),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : () => _addEntry(plant),
+            icon: const Icon(Icons.note_add_outlined),
+            label: const Text('Добавить фото или заметку'),
+          ),
+          if (notes.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('Заметки', style: theme.textTheme.titleLarge),
+            for (final entry in notes)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: SoftCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('HEALTH SCORE',
-                              style: theme.textTheme.labelSmall
-                                  ?.copyWith(letterSpacing: 1.2)),
-                          Text('${plant.healthScore}/100',
-                              style: theme.textTheme.titleMedium),
-                        ],
+                      Text(
+                        _date(entry.createdAt),
+                        style: theme.textTheme.labelSmall,
                       ),
-                      const SizedBox(height: 10),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(99),
-                        child: LinearProgressIndicator(
-                          value: plant.healthScore / 100,
-                          minHeight: 10,
-                          backgroundColor: _neutralContainer(context),
-                          valueColor: AlwaysStoppedAnimation(
-                            plant.healthScore >= 70
-                                ? _good(context)
-                                : plant.healthScore >= 45
-                                    ? const Color(0xFFD79A34)
-                                    : _danger(context),
-                          ),
-                        ),
-                      ),
+                      Text(entry.note),
                     ],
                   ),
                 ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
 
-                const SizedBox(height: 16),
-                _CheckupCard(
-                  plant: plant,
-                  onCheckup: () => _runCheckup(context, ref, plant),
+  Widget _condition(IconData icon, String title, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 22),
+        const SizedBox(width: 10),
+        Expanded(child: Text('$title: $value')),
+      ],
+    ),
+  );
+
+  Future<ImageSource?> _source() => showModalBottomSheet<ImageSource>(
+    context: context,
+    useSafeArea: true,
+    builder: (sheet) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.camera_alt_outlined),
+            title: const Text('Сделать фото'),
+            onTap: () => Navigator.pop(sheet, ImageSource.camera),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: const Text('Выбрать из галереи'),
+            onTap: () => Navigator.pop(sheet, ImageSource.gallery),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Future<void> _checkup(Plant plant) async {
+    if (_busy) return;
+    try {
+      final source = await _source();
+      if (source == null || !mounted) return;
+      final image = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 1600,
+        imageQuality: 88,
+      );
+      if (image == null || !mounted) return;
+      setState(() => _busy = true);
+      try {
+        final data = await _plants.checkup(
+          plant.id,
+          await MultipartFile.fromFile(image.path, filename: 'checkup.jpg'),
+        );
+        if (!mounted) return;
+        final result = Map<String, dynamic>.from(data['result'] as Map);
+        final updated = Plant.fromJson(
+          Map<String, dynamic>.from(data['plant'] as Map),
+        );
+        await showDialog<void>(
+          context: context,
+          builder: (dialog) => AlertDialog(
+            scrollable: true,
+            title: Text(
+              '${updated.healthScore}/100 · ${healthTrendLabel(updated.healthTrend)}',
+            ),
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(plantHealthLabel(updated.healthStatus)),
+                const SizedBox(height: 8),
+                Text(
+                  updated.lastProgressNote.isNotEmpty
+                      ? updated.lastProgressNote
+                      : (result['progressNote'] ??
+                                result['diagnosis']?['description'] ??
+                                '')
+                            .toString(),
                 ),
-
-                // Диагноз ИИ
-                if (diagnosis != null) ...[
-                  const SizedBox(height: 16),
-                  SoftCard(
-                    color: diagnosis.isHealthy
-                        ? _goodContainer(context)
-                        : _dangerContainer(context),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'ДИАГНОЗ ИИ',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            letterSpacing: 1.2,
-                            color: diagnosis.isHealthy
-                                ? _good(context)
-                                : _danger(context),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(diagnosis.title,
-                            style: theme.textTheme.titleLarge),
-                        const SizedBox(height: 6),
-                        Text(diagnosis.description,
-                            style: theme.textTheme.bodyMedium),
-                        if (diagnosis.treatmentPlan.isNotEmpty) ...[
-                          const SizedBox(height: 14),
-                          ...diagnosis.treatmentPlan.asMap().entries.map(
-                                (e) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text('${e.key + 1}. ',
-                                          style: theme.textTheme.bodyMedium
-                                              ?.copyWith(
-                                                  fontWeight:
-                                                      FontWeight.w700)),
-                                      Expanded(
-                                        child: Text(e.value,
-                                            style:
-                                                theme.textTheme.bodyMedium),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                        ],
-                        if (diagnosis.scannedAt != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: Text(
-                              'Скан от ${DateFormat('d MMMM', 'ru').format(diagnosis.scannedAt!)}',
-                              style: theme.textTheme.labelSmall,
-                            ),
-                          ),
-                      ],
-                    ),
+                const SizedBox(height: 12),
+                for (final advice in (result['growthAdvice'] as List? ?? []))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text('• $advice'),
                   ),
-                ],
+                const Text(
+                  'Фото сохранено в недельной истории. Следующая проверка через 7 дней.',
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialog),
+                child: const Text('Готово'),
+              ),
+            ],
+          ),
+        );
+      } on DioException catch (error) {
+        if (error.response?.statusCode != 402 || !mounted) rethrow;
+        final save = await showDialog<bool>(
+          context: context,
+          builder: (dialog) => AlertDialog(
+            scrollable: true,
+            title: const Text('Лимит ИИ-проверок исчерпан'),
+            content: const Text(
+              'Сохранить фото в историю без ИИ-оценки? Состояние и дата контрольной проверки останутся прежними.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialog, false),
+                child: const Text('Отмена'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialog, true),
+                child: const Text('Сохранить фото'),
+              ),
+            ],
+          ),
+        );
+        if (save == true && mounted) {
+          await _plants.addJournal(
+            plant.id,
+            photo: await MultipartFile.fromFile(
+              image.path,
+              filename: 'progress.jpg',
+            ),
+            analyze: false,
+          );
+          _message('Фото сохранено без ИИ-оценки.');
+        }
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
+    } catch (error) {
+      _message(apiErrorMessage(error));
+    }
+  }
 
-                const SizedBox(height: 28),
-                const SectionHeader(title: 'Расписание ухода'),
-                const SizedBox(height: 4),
-                Text('Когда и сколько поливать — по расчёту ИИ',
-                    style: theme.textTheme.labelSmall),
-                const SizedBox(height: 12),
-                _ScheduleCard(plant: plant),
-
-                const SizedBox(height: 28),
-                SectionHeader(
-                  title: 'Уход & Баланс',
-                  action: 'Изменить',
-                  onAction: () => _editCare(context, ref, plant),
+  Future<void> _rename(Plant plant) async {
+    final name = TextEditingController(text: plant.name);
+    var location = plant.location;
+    final key = GlobalKey<FormState>();
+    final saved = await _formDialog<bool>(
+      context: context,
+      builder: (dialog) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          scrollable: true,
+          title: const Text('Личное имя растения'),
+          content: Form(
+            key: key,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: name,
+                  maxLength: 80,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    labelText: 'Имя или место',
+                    hintText: 'Бамбук у окна',
+                  ),
+                  validator: (value) =>
+                      value?.trim().isEmpty != false ? 'Введите имя' : null,
                 ),
                 const SizedBox(height: 12),
-                GridView.count(
-                  crossAxisCount: 2,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 1.15,
-                  children: [
-                    _CareTile(
-                      icon: Icons.water_drop_outlined,
-                      label: 'ПОЛИВ',
-                      value: 'Раз в ${plant.care.wateringIntervalDays} дн.',
-                      highlight: plant.needsWater,
+                DropdownButtonFormField<String>(
+                  initialValue: location,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Расположение'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'indoor',
+                      child: Text('В помещении'),
                     ),
-                    _CareTile(
-                      icon: Icons.local_drink_outlined,
-                      label: 'ПОРЦИЯ ВОДЫ',
-                      value: '${plant.care.waterAmountMl} мл',
-                    ),
-                    _CareTile(
-                      icon: Icons.wb_sunny_outlined,
-                      label: 'ОСВЕЩЕНИЕ',
-                      value: plant.care.light,
-                    ),
-                    _CareTile(
-                      icon: Icons.science_outlined,
-                      label: 'УДОБРЕНИЕ',
-                      value:
-                          'Раз в ${plant.care.fertilizerIntervalDays} дн.',
-                    ),
-                    _CareTile(
-                      icon: Icons.thermostat_outlined,
-                      label: 'ТЕМПЕРАТУРА',
-                      value: plant.care.temperature,
-                    ),
+                    DropdownMenuItem(value: 'outdoor', child: Text('На улице')),
                   ],
+                  onChanged: (value) =>
+                      update(() => location = value ?? 'indoor'),
                 ),
-
-                const SizedBox(height: 28),
-                SectionHeader(
-                  title: 'История растения (до/после)',
-                  action: 'Добавить',
-                  onAction: () => _addJournalEntry(context, ref, plant.id),
-                ),
-                const SizedBox(height: 4),
-                Text('Прогресс по месяцам — фото и оценки ИИ',
-                    style: theme.textTheme.labelSmall),
-                const SizedBox(height: 14),
-                if (details.journal.isEmpty)
-                  SoftCard(
-                    child: Row(
-                      children: [
-                        const Icon(Icons.photo_camera_outlined,
-                            color: AppColors.outline),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'Сделайте первое фото — и следите, как растение меняется со временем.',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                else
-                  ..._buildTimeline(context, details.journal),
               ],
             ),
           ),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _runCheckup(
-      BuildContext context, WidgetRef ref, Plant plant) async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: _isDark(context) ? AppColors.darkSurfaceContainerHigh : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('Сделать фото'),
-              onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Отмена'),
             ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Выбрать из галереи'),
-              onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+            TextButton(
+              onPressed: () {
+                if (key.currentState!.validate()) Navigator.pop(dialog, true);
+              },
+              child: const Text('Сохранить'),
             ),
           ],
         ),
       ),
     );
-    if (source == null) return;
-
-    final picked = await ImagePicker()
-        .pickImage(source: source, maxWidth: 1600, imageQuality: 88);
-    if (picked == null) return;
-
-    if (context.mounted) {
-      showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => const Center(
-            child: CircularProgressIndicator(color: AppColors.primary)),
+    final value = name.text.trim();
+    name.dispose();
+    if (saved == true && mounted) {
+      await _perform(
+        () => _plants.updatePlant(plant.id, {
+          'name': value,
+          'location': location,
+        }),
+        'Имя растения сохранено.',
       );
     }
-
-    try {
-      final photo =
-          await MultipartFile.fromFile(picked.path, filename: 'checkup.jpg');
-      final data =
-          await ref.read(plantsProvider.notifier).checkup(plant.id, photo);
-      ref.invalidate(plantDetailsProvider(plant.id));
-      if (context.mounted) {
-        Navigator.of(context).pop(); // убрать лоадер
-        final result = (data['result'] as Map?)?.cast<String, dynamic>();
-        final advice = (data['growthAdvice'] as List?)?.cast<String>() ?? [];
-        await _showCheckupResult(context, result, advice);
-      }
-    } catch (e) {
-      if (context.mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
-      }
-    }
   }
 
-  Future<void> _showCheckupResult(BuildContext context,
-      Map<String, dynamic>? result, List<String> advice) async {
-    final score = (result?['healthScore'] as num?)?.toInt();
-    final progress = (result?['progressNote'] ?? '') as String;
-    final title =
-        ((result?['diagnosis'] as Map?)?['title'] ?? 'Готово') as String;
-    await showDialog<void>(
+  Future<void> _editCare(Plant plant) async {
+    final water = TextEditingController(
+      text: '${plant.care.wateringIntervalDays}',
+    );
+    final amount = TextEditingController(text: '${plant.care.waterAmountMl}');
+    final fertilizer = TextEditingController(
+      text: '${plant.care.fertilizerIntervalDays}',
+    );
+    final light = TextEditingController(text: plant.care.light);
+    final temperature = TextEditingController(text: plant.care.temperature);
+    final key = GlobalKey<FormState>();
+    final saved = await _formDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: _isDark(context) ? AppColors.darkSurfaceContainerHigh : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Text(score != null ? 'Состояние: $score/100' : 'Готово'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-            if (progress.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(progress),
-            ],
-            if (advice.isNotEmpty) ...[
+      builder: (dialog) => AlertDialog(
+        scrollable: true,
+        title: const Text('Расписание и условия'),
+        content: Form(
+          key: key,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final field in [
+                (water, 'Полив: интервал, дней', 365),
+                (amount, 'Воды за полив, мл', 10000),
+                (fertilizer, 'Подкормка: интервал, дней', 365),
+              ]) ...[
+                TextFormField(
+                  controller: field.$1,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(labelText: field.$2),
+                  validator: (value) {
+                    final number = int.tryParse(value ?? '');
+                    return number == null || number < 1 || number > field.$3
+                        ? 'Введите от 1 до ${field.$3}'
+                        : null;
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
+              TextField(
+                controller: light,
+                decoration: const InputDecoration(labelText: 'Освещение'),
+              ),
               const SizedBox(height: 12),
-              const Text('Что сделать:',
-                  style: TextStyle(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 6),
-              ...advice.map((a) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text('• $a'),
-                  )),
+              TextField(
+                controller: temperature,
+                decoration: const InputDecoration(labelText: 'Температура'),
+              ),
+              const SizedBox(height: 12),
+              const Text('Контрольное фото — раз в 7 дней.'),
             ],
-          ],
+          ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Отлично'),
+            onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (key.currentState!.validate()) Navigator.pop(dialog, true);
+            },
+            child: const Text('Сохранить'),
           ),
         ],
       ),
     );
-  }
-
-  List<Widget> _buildTimeline(
-      BuildContext context, List<JournalEntry> journal) {
-    final widgets = <Widget>[];
-    String? currentMonth;
-    for (final entry in journal) {
-      final month = DateFormat('LLLL yyyy', 'ru').format(entry.createdAt);
-      if (month != currentMonth) {
-        currentMonth = month;
-        widgets.add(Padding(
-          padding: const EdgeInsets.only(top: 6, bottom: 10),
-          child: Text(
-            month.isNotEmpty
-                ? month[0].toUpperCase() + month.substring(1)
-                : month,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: _good(context),
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-        ));
-      }
-      widgets.add(_JournalCard(entry: entry));
+    final care = saved == true
+        ? {
+            'wateringIntervalDays': int.parse(water.text),
+            'waterAmountMl': int.parse(amount.text),
+            'fertilizerIntervalDays': int.parse(fertilizer.text),
+            'light': light.text.trim(),
+            'temperature': temperature.text.trim(),
+            'checkupIntervalDays': 7,
+          }
+        : null;
+    for (final controller in [water, amount, fertilizer, light, temperature]) {
+      controller.dispose();
     }
-    return widgets;
+    if (care != null && mounted) {
+      await _perform(
+        () => _plants.updatePlant(plant.id, {'care': care}),
+        'Условия и расписание сохранены.',
+      );
+    }
   }
 
-  Future<void> _editCare(
-      BuildContext context, WidgetRef ref, Plant plant) async {
-    var watering = plant.care.wateringIntervalDays;
-    var fertilizer = plant.care.fertilizerIntervalDays;
-    var waterMl = plant.care.waterAmountMl;
-    final lightCtrl = TextEditingController(text: plant.care.light);
-    final tempCtrl = TextEditingController(text: plant.care.temperature);
-
-    final saved = await showModalBottomSheet<bool>(
+  Future<void> _addEntry(Plant plant) async {
+    final note = TextEditingController();
+    XFile? photo;
+    final saved = await _formDialog<bool>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: _isDark(context) ? AppColors.darkSurfaceContainerHigh : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
-          padding: EdgeInsets.fromLTRB(
-              24, 24, 24, MediaQuery.of(sheetContext).viewInsets.bottom + 28),
-          child: Column(
+      builder: (dialog) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          scrollable: true,
+          title: const Text('Фото или заметка'),
+          content: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Уход & Баланс',
-                  style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 20),
-              Text('Полив: раз в $watering дн.'),
-              Slider(
-                value: watering.toDouble(),
-                min: 1,
-                max: 30,
-                divisions: 29,
-                activeColor: AppColors.primary,
-                onChanged: (v) => setSheetState(() => watering = v.round()),
-              ),
-              Text('Порция воды: $waterMl мл'),
-              Slider(
-                value: waterMl.toDouble().clamp(50, 1000),
-                min: 50,
-                max: 1000,
-                divisions: 19,
-                activeColor: AppColors.primary,
-                onChanged: (v) =>
-                    setSheetState(() => waterMl = (v / 50).round() * 50),
-              ),
-              Text('Удобрение: раз в $fertilizer дн.'),
-              Slider(
-                value: fertilizer.toDouble(),
-                min: 7,
-                max: 90,
-                divisions: 83,
-                activeColor: AppColors.primary,
-                onChanged: (v) => setSheetState(() => fertilizer = v.round()),
-              ),
               TextField(
-                controller: lightCtrl,
-                decoration: const InputDecoration(hintText: 'Освещение'),
+                controller: note,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  hintText: 'Например: пересадил(а), появился новый лист',
+                ),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: tempCtrl,
-                decoration: const InputDecoration(hintText: 'Температура'),
-              ),
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: () => Navigator.pop(sheetContext, true),
-                child: const Text('Сохранить'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (saved == true) {
-      final api = ref.read(apiProvider);
-      await api.dio.patch('/api/plants/${plant.id}', data: {
-        'care': {
-          'wateringIntervalDays': watering,
-          'waterAmountMl': waterMl,
-          'fertilizerIntervalDays': fertilizer,
-          'light': lightCtrl.text.trim(),
-          'temperature': tempCtrl.text.trim(),
-        },
-      });
-      ref.invalidate(plantDetailsProvider(plant.id));
-      await ref.read(plantsProvider.notifier).reload();
-    }
-  }
-
-  Future<void> _addJournalEntry(
-      BuildContext context, WidgetRef ref, String plantId) async {
-    final noteCtrl = TextEditingController();
-    XFile? photo;
-    var kind = 'progress';
-
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: _isDark(context) ? AppColors.darkSurfaceContainerHigh : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
-          padding: EdgeInsets.fromLTRB(
-              24, 24, 24, MediaQuery.of(sheetContext).viewInsets.bottom + 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Запись в журнал',
-                  style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  for (final (value, label) in [
-                    ('before', 'До'),
-                    ('after', 'После'),
-                    ('progress', 'Прогресс'),
-                  ]) ...[
-                    ChoiceChip(
-                      label: Text(label),
-                      selected: kind == value,
-                      selectedColor: AppColors.secondaryContainer,
-                      onSelected: (_) => setSheetState(() => kind = value),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 14),
               OutlinedButton.icon(
+                icon: const Icon(Icons.photo_outlined),
+                label: Text(photo == null ? 'Прикрепить фото' : 'Фото выбрано'),
                 onPressed: () async {
-                  final picked = await ImagePicker().pickImage(
+                  try {
+                    final picked = await ImagePicker().pickImage(
                       source: ImageSource.gallery,
                       maxWidth: 1600,
-                      imageQuality: 88);
-                  if (picked != null) setSheetState(() => photo = picked);
+                      imageQuality: 88,
+                    );
+                    if (context.mounted && picked != null) {
+                      update(() => photo = picked);
+                    }
+                  } catch (error) {
+                    _message(apiErrorMessage(error));
+                  }
                 },
-                icon: const Icon(Icons.photo_outlined, size: 19),
-                label: Text(photo == null ? 'Прикрепить фото' : 'Фото выбрано ✓'),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: noteCtrl,
-                maxLines: 3,
-                decoration:
-                    const InputDecoration(hintText: 'Заметка о состоянии…'),
-              ),
-              const SizedBox(height: 18),
-              FilledButton(
-                onPressed: () => Navigator.pop(sheetContext, true),
-                child: const Text('Сохранить запись'),
+              const SizedBox(height: 8),
+              const Text(
+                'Дневник без ИИ — бесплатно. Для новой оценки используйте еженедельную проверку.',
               ),
             ],
           ),
-        ),
-      ),
-    );
-
-    if (saved == true && (photo != null || noteCtrl.text.trim().isNotEmpty)) {
-      final api = ref.read(apiProvider);
-      final form = FormData.fromMap({
-        'note': noteCtrl.text.trim(),
-        'kind': kind,
-        if (photo != null)
-          'photo':
-              await MultipartFile.fromFile(photo!.path, filename: 'journal.jpg'),
-      });
-      await api.dio.post('/api/plants/$plantId/journal', data: form);
-      ref.invalidate(plantDetailsProvider(plantId));
-      await ref.read(plantsProvider.notifier).reload();
-    }
-  }
-}
-
-String stageLabel(String stage) {
-  switch (stage) {
-    case 'seed':
-      return 'Семя';
-    case 'sprout':
-      return 'Росток';
-    case 'seedling':
-      return 'Саженец';
-    case 'growing':
-      return 'Растёт';
-    case 'flowering':
-      return 'Цветёт';
-    case 'mature':
-    default:
-      return 'Взрослое';
-  }
-}
-
-class _CheckupCard extends StatelessWidget {
-  const _CheckupCard({required this.plant, required this.onCheckup});
-
-  final Plant plant;
-  final VoidCallback onCheckup;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final due = plant.checkupDueAt;
-    final overdue = plant.needsCheckup;
-    String when;
-    if (due == null) {
-      when = 'по расписанию';
-    } else {
-      final days = due.difference(DateTime.now()).inDays;
-      if (overdue || days <= 0) {
-        when = 'пора обновить фото';
-      } else {
-        when = 'через $days дн. (${DateFormat('d MMM', 'ru').format(due)})';
-      }
-    }
-    return SoftCard(
-      color: overdue ? _dangerContainer(context) : _goodContainer(context),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.camera_alt_outlined,
-                  size: 19,
-                  color: overdue ? _danger(context) : _good(context)),
-              const SizedBox(width: 8),
-              Text('КОНТРОЛЬ СОСТОЯНИЯ',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    letterSpacing: 1.2,
-                    fontWeight: FontWeight.w700,
-                    color: overdue ? _danger(context) : _good(context),
-                  )),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            plant.isGrown
-                ? 'ИИ следит за ростом. Новое фото: $when.'
-                : 'Периодически обновляйте фото — ИИ сравнит и обновит состояние. Новое фото: $when.',
-            style: theme.textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: onCheckup,
-              icon: const Icon(Icons.add_a_photo_outlined, size: 19),
-              label: const Text('Перефотографировать'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Отмена'),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CareTile extends StatelessWidget {
-  const _CareTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.highlight = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final bool highlight;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: highlight
-            ? (_isDark(context)
-                ? AppColors.darkSecondaryContainer
-                : AppColors.secondaryContainer)
-            : _tileCard(context),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: softShadow(),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 21, color: _good(context)),
-          const SizedBox(height: 8),
-          Text(label,
-              style: theme.textTheme.labelSmall?.copyWith(letterSpacing: 1)),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: _valueColor(context),
+            TextButton(
+              onPressed: () {
+                if (photo == null && note.text.trim().isEmpty) {
+                  _message('Добавьте фото или текст заметки.');
+                  return;
+                }
+                Navigator.pop(dialog, true);
+              },
+              child: const Text('Сохранить'),
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _JournalCard extends StatelessWidget {
-  const _JournalCard({required this.entry});
-
-  final JournalEntry entry;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final (kindLabel, kindColor) = switch (entry.kind) {
-      'before' => ('ДО', _danger(context)),
-      'after' => ('ПОСЛЕ', _good(context)),
-      _ => ('ПРОГРЕСС', Theme.of(context).colorScheme.outline),
-    };
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: SoftCard(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (entry.photoUrl != null)
-              PlantImage(url: entry.photoUrl, height: 170, width: double.infinity),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration:
-                      BoxDecoration(color: kindColor, shape: BoxShape.circle),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  '$kindLabel (${DateFormat('d MMM', 'ru').format(entry.createdAt)})',
-                  style: theme.textTheme.labelSmall
-                      ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.8),
-                ),
-              ],
-            ),
-            if (entry.healthScore != null) ...[
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Icon(
-                    entry.trend == 'up'
-                        ? Icons.trending_up
-                        : entry.trend == 'down'
-                            ? Icons.trending_down
-                            : Icons.trending_flat,
-                    size: 16,
-                    color: entry.trend == 'up'
-                        ? _good(context)
-                        : entry.trend == 'down'
-                            ? _danger(context)
-                            : Theme.of(context).colorScheme.outline,
-                  ),
-                  const SizedBox(width: 6),
-                  Text('ИИ-оценка: ${entry.healthScore}/100',
-                      style: theme.textTheme.labelMedium
-                          ?.copyWith(fontWeight: FontWeight.w700)),
-                ],
-              ),
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(99),
-                child: LinearProgressIndicator(
-                  value: entry.healthScore! / 100,
-                  minHeight: 6,
-                  backgroundColor: _neutralContainer(context),
-                  valueColor: AlwaysStoppedAnimation(
-                    entry.healthScore! >= 70
-                        ? _good(context)
-                        : entry.healthScore! >= 45
-                            ? const Color(0xFFD79A34)
-                            : _danger(context),
-                  ),
-                ),
-              ),
-              if ((entry.analysis ?? '').isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(entry.analysis!, style: theme.textTheme.bodyMedium),
-              ],
-            ],
-            if (entry.note.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(entry.note, style: theme.textTheme.bodyMedium),
-            ],
           ],
         ),
       ),
     );
+    final noteText = note.text.trim();
+    note.dispose();
+    if (saved == true && mounted) {
+      await _perform(() async {
+        await _plants.addJournal(
+          plant.id,
+          note: noteText,
+          analyze: false,
+          photo: photo == null
+              ? null
+              : await MultipartFile.fromFile(
+                  photo!.path,
+                  filename: 'journal.jpg',
+                ),
+        );
+      }, 'Запись сохранена в истории.');
+    }
+  }
+
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Удалить растение?'),
+        content: const Text('Его история и напоминания тоже будут удалены.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _perform(() async {
+      await _plants.deletePlant(widget.plantId);
+      if (mounted) context.go('/home');
+    }, 'Растение удалено.');
   }
 }
 
-class _ScheduleCard extends StatelessWidget {
-  const _ScheduleCard({required this.plant});
-
-  final Plant plant;
-
-  String _relative(DateTime? due) {
-    if (due == null) return '—';
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final target = DateTime(due.year, due.month, due.day);
-    final diff = target.difference(today).inDays;
-    if (diff < 0) return 'просрочено';
-    if (diff == 0) return 'сегодня';
-    if (diff == 1) return 'завтра';
-    return 'через $diff дн.';
-  }
-
-  Set<int> _dueDays(DateTime? due, int interval) {
-    final result = <int>{};
-    if (due == null) return result;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final step = interval > 0 ? interval : 7;
-    var d = DateTime(due.year, due.month, due.day);
-    while (d.difference(today).inDays < 14) {
-      final idx = d.difference(today).inDays;
-      if (idx >= 0 && idx < 14) result.add(idx);
-      d = d.add(Duration(days: step));
-    }
-    return result;
-  }
-
+class _CareActionCard extends StatelessWidget {
+  const _CareActionCard({
+    required this.title,
+    required this.icon,
+    required this.due,
+    required this.detail,
+    required this.last,
+    required this.urgent,
+    required this.enabled,
+    required this.onDone,
+    required this.onLater,
+    required this.doneLabel,
+  });
+  final String title, due, detail, last, doneLabel;
+  final IconData icon;
+  final bool urgent, enabled;
+  final VoidCallback onDone, onLater;
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final waterDays = _dueDays(plant.wateringDueAt, plant.care.wateringIntervalDays);
-    final fertDays =
-        _dueDays(plant.fertilizingDueAt, plant.care.fertilizerIntervalDays);
-
     return SoftCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: _NextEventTile(
-                  icon: Icons.water_drop_rounded,
-                  color: _good(context),
-                  title: 'Полив',
-                  when: _relative(plant.wateringDueAt),
-                  detail:
-                      '${plant.care.waterAmountMl} мл • раз в ${plant.care.wateringIntervalDays} дн.',
-                  urgent: plant.needsWater,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _NextEventTile(
-                  icon: Icons.eco_rounded,
-                  color: _isDark(context)
-                      ? const Color(0xFFE6B450)
-                      : const Color(0xFFB77B1F),
-                  title: 'Удобрение',
-                  when: _relative(plant.fertilizingDueAt),
-                  detail: 'раз в ${plant.care.fertilizerIntervalDays} дн.',
-                  urgent: plant.needsFertilizer,
-                ),
-              ),
+              Icon(icon, color: theme.colorScheme.primary),
+              const SizedBox(width: 10),
+              Expanded(child: Text(title, style: theme.textTheme.titleLarge)),
             ],
           ),
-          const SizedBox(height: 18),
-          Text('БЛИЖАЙШИЕ 2 НЕДЕЛИ',
-              style: theme.textTheme.labelSmall?.copyWith(letterSpacing: 1)),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 66,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: 14,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, i) {
-                final day = today.add(Duration(days: i));
-                final isWater = waterDays.contains(i);
-                final isFert = fertDays.contains(i);
-                final active = isWater || isFert;
-                return Container(
-                  width: 42,
-                  decoration: BoxDecoration(
-                    color: active
-                        ? (_isDark(context)
-                            ? AppColors.darkSecondaryContainer
-                            : AppColors.secondaryContainer)
-                        : _neutralContainer(context),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(DateFormat('E', 'ru').format(day).toUpperCase(),
-                          style: theme.textTheme.labelSmall?.copyWith(fontSize: 9)),
-                      const SizedBox(height: 2),
-                      Text('${day.day}',
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          if (isWater)
-                            Icon(Icons.water_drop,
-                                size: 10, color: _good(context)),
-                          if (isFert)
-                            Icon(Icons.eco,
-                                size: 10,
-                                color: _isDark(context)
-                                    ? const Color(0xFFE6B450)
-                                    : const Color(0xFFB77B1F)),
-                          if (!active) const SizedBox(height: 10),
-                        ],
-                      ),
-                    ],
-                  ),
-                );
-              },
+          const SizedBox(height: 6),
+          Text(
+            due,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: urgent
+                  ? theme.colorScheme.error
+                  : theme.colorScheme.primary,
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NextEventTile extends StatelessWidget {
-  const _NextEventTile({
-    required this.icon,
-    required this.color,
-    required this.title,
-    required this.when,
-    required this.detail,
-    this.urgent = false,
-  });
-
-  final IconData icon;
-  final Color color;
-  final String title;
-  final String when;
-  final String detail;
-  final bool urgent;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: urgent
-            ? (_isDark(context)
-                ? AppColors.darkSecondaryContainer
-                : AppColors.secondaryContainer)
-            : _neutralContainer(context),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+          const SizedBox(height: 4),
+          Text(detail),
+          Text(last, style: theme.textTheme.labelSmall),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
             children: [
-              Icon(icon, size: 18, color: color),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(title,
-                    style: theme.textTheme.labelMedium
-                        ?.copyWith(fontWeight: FontWeight.w700)),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(minimumSize: const Size(0, 46)),
+                onPressed: enabled ? onDone : null,
+                icon: const Icon(Icons.check, size: 18),
+                label: Text(doneLabel),
+              ),
+              TextButton(
+                onPressed: enabled ? onLater : null,
+                child: const Text('Не сейчас · завтра'),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(when,
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: urgent ? _good(context) : _valueColor(context),
-              )),
-          const SizedBox(height: 2),
-          Text(detail,
-              style: theme.textTheme.labelSmall,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis),
         ],
       ),
     );
   }
 }
+
+Future<T?> _formDialog<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+}) async {
+  final route = DialogRoute<T>(context: context, builder: builder);
+  final result = await Navigator.of(context, rootNavigator: true).push(route);
+  // Closing TextFields still participate in the route's reverse transition.
+  await route.completed;
+  return result;
+}
+
+String _date(DateTime value) =>
+    DateFormat('d MMMM yyyy', 'ru').format(value.toLocal());
+String _when(DateTime? value) {
+  if (value == null) return 'Дата пока не определена';
+  final due = value.toLocal();
+  final now = DateTime.now();
+  final days = DateTime(
+    due.year,
+    due.month,
+    due.day,
+  ).difference(DateTime(now.year, now.month, now.day)).inDays;
+  if (days < 0) return 'Пора · с ${DateFormat('d MMM', 'ru').format(due)}';
+  if (days == 0) return 'Сегодня';
+  if (days == 1) return 'Завтра';
+  return '${DateFormat('d MMM', 'ru').format(due)} · через $days дн.';
+}
+
+String stageLabel(String stage) => switch (stage) {
+  'seed' => 'Семя',
+  'sprout' => 'Росток',
+  'seedling' => 'Саженец',
+  'growing' => 'Растёт',
+  'flowering' => 'Цветёт',
+  _ => 'Взрослое',
+};
